@@ -110,5 +110,8 @@ for file in filelist:
         output.append("\n")
         output.append("\n")
 
-with open("pretense_compiled.lua", 'w') as f:
+compile_path = "build/pretense_compiled.lua"
+if os.path.dirname(compile_path):
+    os.makedirs(os.path.dirname(compile_path), exist_ok=True)
+with open(compile_path, 'w') as f:
     f.writelines(output)
