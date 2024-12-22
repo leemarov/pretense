@@ -15,6 +15,38 @@ do
         return 'Strike'
     end
 
+    function Strike_Hard:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        
+        local zn = ZoneCommand.getZoneByName(self.target)
+        
+        local kill = ObjDestroyUnitsWithAttributeAtZone:new()
+        kill:initialize(self, { 
+            attr = {"Buildings"},
+            amount = 1,
+            killed = 0,
+            hits = 0,
+            tgtzone = zn
+        })
+
+        table.insert(self.objectives, kill)
+
+        local clear = ObjClearZoneOfUnitsWithAttribute:new()
+        clear:initialize(self, {
+            attr = {"Buildings"},
+            tgtzone = zn
+        })
+        table.insert(self.objectives, clear)
+
+        description = description..'   Destroy every structure at '..zn.name
+        self.info = {
+            targetzone = zn
+        }
+
+        self.description = self.description..description
+    end
+
     function Strike_Hard:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
@@ -46,6 +78,7 @@ do
                 attr = {"Buildings"},
                 amount = 1,
                 killed = 0,
+                hits = 0,
                 tgtzone = zn
             })
 

@@ -31,6 +31,28 @@ do
 		return o
     end
 
+    local function getCenter(unitslist)
+        local center = { x=0,y=0,z=0}
+        local count = 0
+        for _,u in pairs(unitslist) do
+            if u and u:isExist() then
+                local up = u:getPoint()
+                center = {
+                    x = center.x + up.x,
+                    y = center.y + up.y,
+                    z = center.z + up.z,
+                }
+                count = count + 1
+            end
+        end
+
+        center.x = center.x / count
+        center.y = center.y / count
+        center.z = center.z / count
+
+        return center
+    end
+
     function GCI:registerPlayer(name, unit, warningRadius, metric)
         if warningRadius > 0 then
             local msg = "Warning radius set to "..warningRadius
@@ -46,11 +68,15 @@ do
             else
                 wRadius = warningRadius * 1852
             end
+
+            local callsign = DependencyManager.get("PlayerTracker"):getPlayerConfig(name).gci_callsign
             
             self.players[name] = {
                 unit = unit, 
                 warningRadius = wRadius,
-                metric = metric
+                metric = metric,
+                callsign = callsign,
+                lastTransmit = timer.getAbsTime() - 60
             }
             
             trigger.action.outTextForUnit(unit:getID(), msg, 10)
@@ -64,9 +90,22 @@ do
         end
     end
 
+    function GCI:setCallsign(name, unit, cname)
+        local uid = unit:getID()
+        
+        local ptr = DependencyManager.get('PlayerTracker')
+        local csign = ptr:generateCallsign(cname)
+        ptr:setPlayerConfig(name, 'gci_callsign', csign)
+        
+        trigger.action.outTextForUnit(uid, "GCI callsign set to "..PlayerTracker.callsignToString(csign), 10)
+
+        if not self.players[name] then return end
+        self.players[name].callsign = csign
+    end
+
     function GCI:start()
-        MenuRegistry:register(4, function(event, context)
-			if event.id == world.event.S_EVENT_BIRTH and event.initiator and event.initiator.getPlayerName then
+        MenuRegistry.register(4, function(event, context)
+			if (event.id == world.event.S_EVENT_PLAYER_ENTER_UNIT or event.id == world.event.S_EVENT_BIRTH) and event.initiator and event.initiator.getPlayerName then
 				local player = event.initiator:getPlayerName()
 				if player then
 					local groupid = event.initiator:getGroup():getID()
@@ -98,19 +137,25 @@ do
                         missionCommands.addCommandForGroup(groupid, '80 NM', nmMenu, Utils.log(context.registerPlayer), context, player, unit, 80, false)
                         missionCommands.addCommandForGroup(groupid, 'Disable Warning Radius', menu, Utils.log(context.registerPlayer), context, player, unit, 0, false)
 
+                        
+                        local gcicsignmenu = missionCommands.addSubMenuForGroup(groupid, 'Callsign', menu)
+
+                        local sub1 = gcicsignmenu
+                        local count = 0
+                        for i,v in ipairs(PlayerTracker.callsigns) do
+                            count = count + 1
+                            if count%9==1 and count>1 then
+                                sub1 = missionCommands.addSubMenuForGroup(groupid, "More", sub1)
+                                missionCommands.addCommandForGroup(groupid, v, sub1, Utils.log(context.setCallsign), context, player, unit, v)
+                            else
+                                missionCommands.addCommandForGroup(groupid, v, sub1, Utils.log(context.setCallsign), context, player, unit, v)
+                            end
+                        end
+
                         context.groupMenus[groupid] = menu
                     end
 				end
-            elseif (event.id == world.event.S_EVENT_PLAYER_LEAVE_UNIT or event.id == world.event.S_EVENT_DEAD) and event.initiator and event.initiator.getPlayerName then
-                local player = event.initiator:getPlayerName()
-				if player then
-					local groupid = event.initiator:getGroup():getID()
-					
-                    if context.groupMenus[groupid] then
-                        missionCommands.removeItemForGroup(groupid, context.groupMenus[groupid])
-                        context.groupMenus[groupid] = nil
-                    end
-				end
+
             end
 		end, self)
 
@@ -172,15 +217,43 @@ do
                 
                 env.info("GCI - aware of "..dcount.." enemy units")
 
+                local minsep = 1500
+                local minaltsep = 500
+                local dectgroups = {}
+                local assignedUnits = {}
+                for nm,dt in pairs(dect) do
+                    for gnm, gdt in pairs(dectgroups) do
+                        if gdt.leader and gdt.leader:isExist() and dt and dt:isExist() then
+                            if gdt.leader:getDesc().typeName == dt:getDesc().typeName then
+                                local dist = mist.utils.get2DDist(gdt.center, dt:getPoint())
+                                if dist < minsep and math.abs(gdt.center.y-dt:getPoint().y)<minaltsep then
+                                    gdt.units[nm] = dt
+                                    gdt.center = getCenter(gdt.units)
+                                    assignedUnits[nm] = true
+                                    break
+                                end
+                            end
+                        end
+                    end
+
+                    if not assignedUnits[nm] then
+                        dectgroups[nm] = { leader = dt, units={}, center = {}}
+                        dectgroups[nm].units[nm] = dt
+                        dectgroups[nm].center = getCenter(dectgroups[nm].units)
+                        assignedUnits[nm] = true
+                    end
+                end
+
                 for name, data in pairs(self.players) do
                     if data.unit and data.unit:isExist() then
                         local closeUnits = {}
 
                         local wr = data.warningRadius
                         if wr > 0 then
-                            for _,dt in pairs(dect) do
+                            for _,dtg in pairs(dectgroups) do
+                                local dt = dtg.leader
                                 if dt:isExist() then
-                                    local tgtPnt = dt:getPoint()
+                                    local tgtPnt = dtg.center
                                     local dist = mist.utils.get2DDist(data.unit:getPoint(), tgtPnt)
                                     if dist <= wr then
                                         local brg = math.floor(Utils.getBearing(data.unit:getPoint(), tgtPnt))
@@ -207,13 +280,21 @@ do
                                             priority = 3
                                         end
 
+                                        local type = "UNKN"
+                                        if dt:hasAttribute("Helicopters") then
+                                            type = "HELO"
+                                        elseif dt:hasAttribute("Planes") then
+                                            type = "FXWG"
+                                        end
+
                                         table.insert(closeUnits, {
-                                            type = dt:getDesc().typeName,
+                                            type = type, --dt:getDesc().typeName,
                                             bearing = brg,
                                             range = dist,
                                             altitude = tgtPnt.y,
                                             score = dist*priority,
-                                            aspect = aspect
+                                            aspect = aspect,
+                                            size = Utils.getTableSize(dtg.units)
                                         })
                                     end
                                 end
@@ -223,37 +304,70 @@ do
                         env.info("GCI - "..#closeUnits.." enemy units within "..wr.."m of "..name)
                         if #closeUnits > 0 then
                             table.sort(closeUnits, function(a, b) return a.range < b.range end)
-
-                            local msg = "GCI Report:\n"
+                            local strcallsign = DependencyManager.get("PlayerTracker").callsignToString(data.callsign)
+                            local msg = "GCI Report for ["..strcallsign.."]:\n"
                             local count = 0
+                            local callouts = {}
                             for _,tgt in ipairs(closeUnits) do
                                 if data.metric then
                                     local km = tgt.range/1000
                                     if km < 1 then
                                         msg = msg..'\n'..tgt.type..'  MERGED'
                                     else
-                                        msg = msg..'\n'..tgt.type..'  BRA: '..tgt.bearing..' for '
+                                        msg = msg..'\n'..tgt.type
+                                        msg = msg..'  BRA: '..tgt.bearing..' for '
                                         msg = msg..Utils.round(km)..'km at '
                                         msg = msg..(Utils.round(tgt.altitude/250)*250)..'m, '
                                         msg = msg..tostring(tgt.aspect)
+                                        if tgt.size > 1 then msg = msg..',    GROUP of '..tgt.size end
                                     end
                                 else
                                     local nm = tgt.range/1852
                                     if nm < 1 then
                                         msg = msg..'\n'..tgt.type..'  MERGED'
                                     else
-                                        msg = msg..'\n'..tgt.type..'  BRA: '..tgt.bearing..' for '
+                                        msg = msg..'\n'..tgt.type
+                                        msg = msg..'  BRA: '..tgt.bearing..' for '
                                         msg = msg..Utils.round(nm)..'nm at '
                                         msg = msg..(Utils.round((tgt.altitude/0.3048)/1000)*1000)..'ft, '
                                         msg = msg..tostring(tgt.aspect)
+                                        if tgt.size > 1 then msg = msg..',    GROUP of '..tgt.size end
                                     end
                                 end
                                 
+                                if tgt.aspect == "Hot" and data.lastTransmit < (timer.getAbsTime()-Config.gciRadioTimeout) and #callouts <= Config.gciMaxCallouts then
+                                    local miles = Utils.round(tgt.range/1852)
+                                    local angels = Utils.round((tgt.altitude/0.3048)/1000)
+                                    table.insert(callouts, {
+                                        type = tgt.type,
+                                        size = tgt.size,
+                                        bearing = tgt.bearing,
+                                        miles = miles,
+                                        angels = angels
+                                    })
+                                end
+
                                 count = count + 1
                                 if count >= 10 then break end
                             end
 
-                            trigger.action.outTextForUnit(data.unit:getID(), msg, 19)
+                            if #callouts > 0 then
+                                local sourcePos = data.unit:getPoint()
+
+                                for i,call in ipairs(callouts) do
+                                    if i==1 then
+                                        TransmissionManager.gciCallout(TransmissionManager.radios.gci, data.callsign, call.type, call.size, call.bearing, call.miles, call.angels, sourcePos)
+                                    else
+                                        TransmissionManager.gciCallout(TransmissionManager.radios.gci, nil, call.type, call.size, call.bearing, call.miles, call.angels, sourcePos)
+                                    end 
+                                end
+
+                                data.lastTransmit = timer.getAbsTime()
+                            end
+                            
+                            if DependencyManager.get("PlayerTracker"):getPlayerConfig(name).gciTextReports then
+                                trigger.action.outTextForUnit(data.unit:getID(), msg, 19)
+                            end
                         end
                     else
                         self.players[name] = nil

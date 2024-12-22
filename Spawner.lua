@@ -12,6 +12,43 @@ do
         return coalition.addGroup(country.id.CJTF_BLUE, Group.Category.GROUND, groupData)
     end
 
+    function Spawner.createPlayerVehicle(template, name, position, side)
+        local groupData = Spawner.getData(template, name, position, nil, 5, {
+            [land.SurfaceType.LAND] = true, 
+            [land.SurfaceType.ROAD] = true,
+            [land.SurfaceType.RUNWAY] = true,
+        })
+
+        for i,v in ipairs(groupData.units) do
+            v.playerCanDrive = true
+            v.coldAtStart = true
+        end
+
+        return coalition.addGroup(country.id.CJTF_BLUE, Group.Category.GROUND, groupData)
+    end
+
+    function Spawner.createCrate(name, objType, pos, side, minDist, maxDist, weight)
+        local data = Spawner.getData(objType, name, pos, minDist, maxDist, {
+            [land.SurfaceType.LAND] = true, 
+            [land.SurfaceType.ROAD] = true,
+            [land.SurfaceType.RUNWAY] = true
+        })
+
+        if not data then return end
+
+        data.mass = weight
+        data.canCargo = true
+
+        local cnt = country.id.CJTF_BLUE
+        if side == 1 then
+            cnt = country.id.CJTF_RED
+        end
+
+        if data.dataCategory == TemplateDB.type.static then
+            return coalition.addStaticObject(cnt, data)
+        end
+    end
+
     function Spawner.createObject(name, objType, pos, side, minDist, maxDist, surfaceTypes, zone)
         if zone then
             zone = CustomZone:getByName(zone) -- expand zone name to CustomZone object
@@ -97,7 +134,7 @@ do
             spawnData = {
                 ["type"] = data.type,
                 ["name"] = name,
-                ["shape_name"] = data.shape,
+                ["shape_name"] = data.shape_name,
                 ["category"] = data.category,
                 ["x"] = pos.x,
                 ["y"] = pos.y,
@@ -118,7 +155,7 @@ do
                             ["type"] = "Turning Point",
                             ["ETA"] = 0,
                             ["formation_template"] = "",
-                            ["task"] = Spawner.getDefaultTask(data.invisible)
+                            ["task"] = Spawner.getDefaultTask(data.invisible, data.isSam)
                         }
                     }
                 }
@@ -133,7 +170,12 @@ do
             end
             
             for i,v in ipairs(data.units) do
-                table.insert(spawnData.units, Spawner.getUnit(v, name.."-"..i, pos, data.skill, minDist, maxDist, surfaceTypes, zone))
+                local newUn = Spawner.getUnit(v, name.."-"..i, pos, data.skill, minDist, maxDist, surfaceTypes, zone)
+                if data.props then
+                    newUn.AddPropVehicle = data.props
+                end
+
+                table.insert(spawnData.units, newUn)
             end
         end
 
@@ -142,7 +184,7 @@ do
         return spawnData
     end
 
-    function Spawner.getDefaultTask(invisible)
+    function Spawner.getDefaultTask(invisible, isSam)
         local defTask =  {
             ["id"] = "ComboTask",
             ["params"] = 
@@ -191,9 +233,33 @@ do
             }
         }
 
+        local index = 3
+
+        if isSam then
+            table.insert(defTask.params.tasks, {
+                ["enabled"] = true,
+                ["auto"] = false,
+                ["id"] = "WrappedAction",
+                ["number"] = index,
+                ["params"] = 
+                {
+                    ["action"] = 
+                    {
+                        ["id"] = "Option",
+                        ["params"] = 
+                        {
+                            ["name"] = 31,
+                            ["value"] = true,
+                        }
+                    }
+                }
+            })
+            index = index + 1
+        end
+
         if invisible then 
             table.insert(defTask.params.tasks, {
-                ["number"] = 3,
+                ["number"] = index,
                 ["auto"] = false,
                 ["id"] = "WrappedAction",
                 ["enabled"] = true,

@@ -17,14 +17,81 @@ do
     function PersistenceManager:restore()
         self:restoreZones()
         self:restoreAIMissions()
-        self:restoreBattlefield()
         self:restoreCsar()
         self:restoreSquads()
         self:restoreCarriers()
-
+        self:restoreTrackedBoxes()
+        self:restoreFarps()
+        self:restoreHumanResource()
+        self:restoreStrategy()
+        self:restorePlayerVehicles()
+        
         timer.scheduleFunction(function(param)
             param:restoreStrikeTargets()
+            param:restoreReconAreas()
         end, self, timer.getTime()+5)
+    end
+    
+    function PersistenceManager:restorePlayerVehicles()
+        local save = self.data
+        if save.playerVehicles then
+            DependencyManager.get("PlayerLogistics"):restorePlayerVehicles(save.playerVehicles)
+        end
+    end
+
+    function PersistenceManager:restoreStrategy()
+        local save = self.data
+        if save.strategy then 
+            StrategicAI.redAI:restoreState(save.strategy.red)
+            StrategicAI.blueAI:restoreState(save.strategy.blue)
+        end
+    end
+
+    function PersistenceManager:restoreHumanResource()
+        local save = self.data
+        if save.humanResource then
+            DependencyManager.get("PlayerLogistics").humanResource = save.humanResource
+        end
+    end
+
+    function PersistenceManager:restoreFarps()
+        local save = self.data
+        if save.trackedBuildings then
+            for i,v in ipairs(save.trackedBuildings) do
+                Spawner.createObject(v.name, v.type, v.pos, v.side, 0, 0, {
+                    [land.SurfaceType.LAND] = true, 
+                    [land.SurfaceType.ROAD] = true,
+                    [land.SurfaceType.RUNWAY] = true
+                })
+
+                DependencyManager.get("PlayerLogistics").trackedBuildings[v.name] = { name=v.name, type=v.type }
+            end
+
+            timer.scheduleFunction(function(param, time)
+                for i,v in ipairs(save.trackedBuildings) do
+                    if v.type == PlayerLogistics.buildables.farp then
+                        if v.warehouse then
+                            WarehouseManager.restore(v.name, v.warehouse)
+                        end
+
+                        if v.resource then
+                            local f = FARPCommand:new(v.name, 500)
+                            f.resource = v.resource
+                            DependencyManager.get("PlayerLogistics").trackedBuildings[v.name].farp = f
+                        end
+                    end
+                end
+            end, save.trackedBuildings, timer.getTime()+2)
+        end
+    end
+
+    function PersistenceManager:restoreTrackedBoxes()
+        local save = self.data
+        if save.trackedBoxes then
+            for _,v in ipairs(save.trackedBoxes) do
+                DependencyManager.get("PlayerLogistics"):restoreBox(v)
+            end
+        end
     end
 
     function PersistenceManager:restoreZones()
@@ -36,6 +103,7 @@ do
                 z.resource = v.resource
                 z.revealTime = v.revealTime
                 z.extraBuildResources = v.extraBuildResources
+                z.sabotageDebt = v.sabotageDebt or 0
                 z.mode = v.mode
                 z.distToFront = v.distToFront
                 z.closestEnemyDist = v.closestEnemyDist
@@ -76,19 +144,28 @@ do
                 
                 if v.currentBuild then
                     local pr = z:getProductByName(v.currentBuild.name)
-                    z:queueBuild(pr, v.currentBuild.side, v.currentBuild.isRepair, v.currentBuild.progress)
+                    z:queueBuild(pr, v.currentBuild.isRepair, v.currentBuild.progress)
                 end
     
                 if v.currentMissionBuild then
                     local pr = z:getProductByName(v.currentMissionBuild.name)
-                    z:queueBuild(pr, v.currentMissionBuild.side, false, v.currentMissionBuild.progress)
+                    z:queueBuild(pr, false, v.currentMissionBuild.progress)
                 end
                 
                 z:refreshText()
-                z:refreshSpawnBlocking()
             end
         end
 
+        if save.missionResources then
+            for i,v in ipairs(save.missionResources) do
+                for i2,v2 in pairs(v) do
+                    local z = ZoneCommand.getZoneByName(v2.ownername)
+                    local prod = z:getProductByName(v2.prodname)
+
+                    StrategicAI.pushResource(prod)
+                end
+            end
+        end
     end
 
     function PersistenceManager:restoreAIMissions()
@@ -117,46 +194,13 @@ do
                     end
                 elseif v.lastMission and reActivateStates[v.state] then
                     timer.scheduleFunction(function(param, time)
-                        local z = ZoneCommand.getZoneByName(param.homeName)
-                        if z then
-                            z:reActivateMission(param)
-                        end
+                        local z = ZoneCommand.getZoneByName(param.ownerName)
+                        local p = z:getProductByName(param.productName)
+                        AIActivator.activateMission(p, nil, v)
                     end, v, timer.getTime()+3)
                 end
             end
         end
-    end
-
-    function PersistenceManager:restoreBattlefield()
-        local save = self.data
-        if save.battlefieldManager then
-            if save.battlefieldManager.priorityZones then
-                if save.battlefieldManager.priorityZones['1'] then
-                    BattlefieldManager.priorityZones[1] = ZoneCommand.getZoneByName(save.battlefieldManager.priorityZones[1])
-                end
-
-
-                if save.battlefieldManager.priorityZones['2'] then
-                    BattlefieldManager.priorityZones[2] = ZoneCommand.getZoneByName(save.battlefieldManager.priorityZones[2])
-                end
-            end
-
-            if save.battlefieldManager.overridePriorityZones then
-                if save.battlefieldManager.overridePriorityZones['1'] then
-                    BattlefieldManager.overridePriorityZones[1] = {
-                        zone = ZoneCommand.getZoneByName(save.battlefieldManager.overridePriorityZones['1'].zone),
-                        ticks = save.battlefieldManager.overridePriorityZones['1'].ticks
-                    }
-                end
-
-                if save.battlefieldManager.overridePriorityZones['2'] then
-                    BattlefieldManager.overridePriorityZones[2] = {
-                        zone = ZoneCommand.getZoneByName(save.battlefieldManager.overridePriorityZones['2'].zone),
-                        ticks = save.battlefieldManager.overridePriorityZones['2'].ticks
-                    }
-                end
-            end
-        end 
     end
 
     function PersistenceManager:restoreCsar()
@@ -208,6 +252,22 @@ do
         end
     end
 
+    function PersistenceManager:restoreReconAreas()
+        local save = self.data
+        if save.reconAreas then
+            for i,v in pairs(save.reconAreas) do
+                if v.gname then
+                    local gr = Group.getByName(v.gname)
+                    DependencyManager.get("ReconManager"):revealGroup(v.gname, v.padding, v.lifetime)
+                else
+                    local zone = ZoneCommand.getZoneByName(v.zname)
+                    local product = zone:getProductByName(v.pname)
+                    DependencyManager.get("ReconManager"):createReconArea(product, zone, v.padding, v.lifetime, true)
+                end
+            end
+        end
+    end
+
     function PersistenceManager:restoreCarriers()
         local save = self.data
         if save.carriers then
@@ -216,7 +276,6 @@ do
                 if carrier then 
                     carrier.resource = math.min(v.resource, carrier.maxResource)
                     carrier.weaponStocks = v.weaponStocks or {}
-                    carrier:refreshSpawnBlocking()
 
                     local group = Group.getByName(v.name)
                     if group then
@@ -250,6 +309,10 @@ do
                                             zn = CarrierCommand.getCarrierByName(sfsData.targetName)
                                         end
 
+                                        if not zn then 
+                                            zn = FARPCommand.getFARPByName(sfsData.targetName)
+                                        end
+
                                         if zn then
                                             CarrierCommand.spawnSupport(sflight, zn, sfsData)
                                         end
@@ -257,6 +320,10 @@ do
                                         local zn = ZoneCommand.getZoneByName(sfsData.targetName)
                                         if not zn then 
                                             zn = CarrierCommand.getCarrierByName(sfsData.targetName)
+                                        end
+                                        
+                                        if not zn then 
+                                            zn = FARPCommand.getFARPByName(sfsData.targetName)
                                         end
 
                                         if zn then
@@ -325,6 +392,7 @@ do
                 distToFront = v.distToFront,
                 closestEnemyDist = v.closestEnemyDist,
                 extraBuildResources = v.extraBuildResources,
+                sabotageDebt = v.sabotageDebt,
                 revealTime = v.revealTime,
                 built = {}
             }
@@ -364,10 +432,19 @@ do
             end
         end
 
+        tosave.missionResources = {}
+        for i,v in ipairs(StrategicAI.resources) do
+            tosave.missionResources[i] = {}
+            for i2,v2 in pairs(v) do
+                tosave.missionResources[i][i2] = {prodname = v2.name, ownername = v2.owner.name}
+            end
+        end
+
         tosave.activeGroups = {}
         for i,v in pairs(DependencyManager.get("GroupMonitor").groups) do
             tosave.activeGroups[i] = {
                 productName = v.product.name,
+                ownerName = v.product.owner.name,
                 type = v.product.missionType
             }
 
@@ -402,34 +479,6 @@ do
             end
         end
 
-        tosave.battlefieldManager = {
-            priorityZones = {},
-            overridePriorityZones = {}
-        }
-
-        if BattlefieldManager.priorityZones[1] then
-            tosave.battlefieldManager.priorityZones['1'] = BattlefieldManager.priorityZones[1].name
-        end
-        
-        if BattlefieldManager.priorityZones[2] then
-            tosave.battlefieldManager.priorityZones['2'] = BattlefieldManager.priorityZones[2].name
-        end
-        
-        if BattlefieldManager.overridePriorityZones[1] then
-            tosave.battlefieldManager.overridePriorityZones['1'] = { 
-                zone = BattlefieldManager.overridePriorityZones[1].zone.name, 
-                ticks = BattlefieldManager.overridePriorityZones[1].ticks
-            }
-        end
-
-        if BattlefieldManager.overridePriorityZones[2] then
-            tosave.battlefieldManager.overridePriorityZones['2'] = { 
-                zone = BattlefieldManager.overridePriorityZones[2].zone.name, 
-                ticks = BattlefieldManager.overridePriorityZones[2].ticks
-            }
-        end
-
-
         tosave.csarTracker = {}
 
         for i,v in pairs(DependencyManager.get("CSARTracker").activePilots) do
@@ -449,6 +498,8 @@ do
                 state = v.state,
                 remainingStateTime = v.remainingStateTime,
                 position = v.position,
+                deployPos = v.deployPos,
+                targetPos = v.targetPos,
                 name = v.name,
                 type = v.data.type,
                 side = v.data.side,
@@ -456,6 +507,8 @@ do
                 discovered = v.discovered
             }
         end
+
+        tosave.humanResource = DependencyManager.get("PlayerLogistics").humanResource
 
         tosave.carriers = {}
         for cname,cdata in pairs(CarrierCommand.getAllCarriers()) do
@@ -505,6 +558,129 @@ do
         tosave.strikeTargets = {}
         for i,v in pairs(MissionTargetRegistry.strikeTargets) do
             tosave.strikeTargets[i] = { pname = v.data.name, zname = v.zone.name, elapsedTime = timer.getAbsTime() - v.addedTime, isDeep = v.isDeep }
+        end
+
+        tosave.reconAreas = {}
+        for i,v in ipairs(DependencyManager.get("ReconManager").reconAreas) do
+            if v.group then
+                table.insert(tosave.reconAreas,{
+                    gname = v.group:getName(),
+                    padding = v.padding,
+                    lifetime = v.lifetime
+                })
+            else
+                table.insert(tosave.reconAreas,{
+                    zname = v.zonename,
+                    pname = v.productname,
+                    padding = v.padding,
+                    lifetime = v.lifetime
+                })
+            end
+        end
+
+        tosave.trackedBoxes = {}
+        for i,v in pairs(DependencyManager.get("PlayerLogistics").trackedBoxes) do
+            if v.lifetime > 0 then
+                local box = StaticObject.getByName(i) or Unit.getByName(i)
+                if box and box:isExist() and Utils.isLanded(box) then
+                    local p = box:getPoint()
+
+                    table.insert(tosave.trackedBoxes, {
+                        name = v.name,
+                        amount = v.amount, 
+                        origin = v.origin.name,
+                        side = box:getCoalition(),
+                        type = v.type,
+                        pos = { x = p.x, y = p.z },
+                        lifetime = v.lifetime,
+                        content = v.content,
+                        convert = v.convert,
+                        isSalvage = v.isSalvage
+                    })
+                end
+            end
+        end
+
+        tosave.trackedBuildings = {}
+        for i,v in pairs(DependencyManager.get("PlayerLogistics").trackedBuildings) do
+            if not v.isDeleted then
+                local bl = StaticObject.getByName(i)
+                if bl and bl:isExist() then
+                    local p = bl:getPoint()
+
+                    local wh = nil
+                    if v.type == PlayerLogistics.buildables.farp then
+                        wh = WarehouseManager.toString(v.name)
+                    end
+
+                    local res = nil
+                    if v.farp then res = v.farp.resource end
+
+                    table.insert(tosave.trackedBuildings, {
+                        name = v.name,
+                        side = bl:getCoalition(),
+                        type = v.type,
+                        pos = { x = p.x, y = p.z },
+                        warehouse = wh,
+                        resource = res
+                    })
+                else
+                    local g = Group.getByName(i)
+                    if g and g:isExist() and g:getSize()>0 then
+                        local p = g:getUnit(1):getPoint()
+
+                        table.insert(tosave.trackedBuildings, {
+                            name = v.name,
+                            side = g:getCoalition(),
+                            type = v.type,
+                            pos = { x = p.x, y = p.z }
+                        })
+                    end
+                end
+            end
+        end
+
+        tosave.strategy = {
+            red = StrategicAI.redAI:serializeState(),
+            blue = StrategicAI.blueAI:serializeState()
+        }
+
+        tosave.playerVehicles = {}
+        for i,v in pairs(DependencyManager.get("PlayerLogistics").trackedPlayerVehicles) do
+            local g = Group.getByName(i)
+            if g and g:isExist() and g:getSize() > 0 then
+                local u = g:getUnit(1)
+                local pl = DependencyManager.get("PlayerLogistics")
+
+
+                local carry = {}
+                if pl.carriedCargo[g:getID()] then carry.carriedCargo = pl.carriedCargo[g:getID()] end
+                if pl.carriedInfantry[g:getID()] then 
+                    carry.carriedInfantry = {}
+                    for i,v in ipairs(pl.carriedInfantry[g:getID()]) do
+                        local inf = {
+                            type = v.type,
+                            weight = v.weight,
+                            size = v.size,
+                        }
+
+                        if v.loadedAt then inf.loadedAt = v.loadedAt.name end
+
+                        table.insert(carry.carriedInfantry, inf)
+                    end
+                end
+                if pl.carriedPilots[g:getID()] then carry.carriedPilots = pl.carriedPilots[g:getID()] end
+                if pl.carriedBoxes[g:getID()] then carry.carriedBoxes = pl.carriedBoxes[g:getID()] end
+
+                tosave.playerVehicles[i] = { 
+                    name = v.name, 
+                    template = v.template, 
+                    side = v.side, 
+                    pos = u:getPoint(),
+                    carry = carry,
+                    mp = v.mp
+                }
+            end
         end
 
         Utils.saveTable(self.path, tosave)

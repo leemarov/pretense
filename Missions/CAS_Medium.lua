@@ -9,6 +9,10 @@ do
         return 'CAS'
     end
 
+    function CAS_Medium:createObjective()
+        env.info("ERROR - Can't create CAS_Medium on demand")
+    end
+
     function CAS_Medium:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
@@ -17,7 +21,8 @@ do
         kills:initialize(self, {
             attr = {'Ground Units'},
             amount = math.random(8,12),
-            killed = 0
+            killed = 0,
+            hits = 0
         })
 
         table.insert(self.objectives, kills)

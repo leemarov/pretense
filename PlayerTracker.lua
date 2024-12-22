@@ -1,7 +1,7 @@
 
 PlayerTracker = {}
 do
-    PlayerTracker.savefile = 'player_stats.json'
+    PlayerTracker.savefile = 'player_stats_v2.0.json'
     PlayerTracker.statTypes = {
         xp = 'XP',
         cmd = "CMD",
@@ -10,7 +10,6 @@ do
 
     PlayerTracker.cmdShopTypes = {
         smoke = 'smoke',
-        prio = 'prio',
         jtac = 'jtac',
         bribe1 = 'bribe1',
         bribe2 = 'bribe2',
@@ -20,13 +19,15 @@ do
 
     PlayerTracker.cmdShopPrices = {
         [PlayerTracker.cmdShopTypes.smoke] = 1,
-        [PlayerTracker.cmdShopTypes.prio] = 10,
         [PlayerTracker.cmdShopTypes.jtac] = 20,
-        [PlayerTracker.cmdShopTypes.bribe1] = 5,
-        [PlayerTracker.cmdShopTypes.bribe2] = 10,
-        [PlayerTracker.cmdShopTypes.artillery] = 15,
-        [PlayerTracker.cmdShopTypes.sabotage1] = 20,
+        [PlayerTracker.cmdShopTypes.bribe1] = 10,
+        [PlayerTracker.cmdShopTypes.bribe2] = 15,
+        [PlayerTracker.cmdShopTypes.artillery] = 40,
+        [PlayerTracker.cmdShopTypes.sabotage1] = 30,
     }
+
+    PlayerTracker.callsigns = { 'Caveman', 'Casper', 'Banjo', 'Boomer', 'Shaft', 'Wookie', 'Tiny', 'Tool', 'Trash', 'Orca', 'Irish', 'Flex', 'Grip', 'Dice', 'Duck', 'Poet', 'Jack', 'Lego', 'Hurl', 'Spin' }
+    table.sort(PlayerTracker.callsigns)
 
 	function PlayerTracker:new()
 		local obj = {}
@@ -35,7 +36,6 @@ do
         obj.tempStats = {}
         obj.groupMenus = {}
         obj.groupShopMenus = {}
-        obj.groupConfigMenus = {}
         obj.groupTgtMenus = {}
         obj.playerEarningMultiplier = {}
 
@@ -79,17 +79,34 @@ do
                     
                         local pname = event.initiator:getPlayerName()
                         if pname then
-                            local gr = event.initiator:getGroup()
-                            if trigger.misc.getUserFlag(gr:getName())==1 then
-                                blocked = true
-                                trigger.action.outTextForGroup(gr:getID(), 'Can not spawn as '..gr:getName()..' in enemy/neutral zone or zone without enough resources',5)
-                                event.initiator:destroy()
+                            local un = event.initiator
 
-                                for i,v in pairs(net.get_player_list()) do
-                                    if net.get_name(v) == pname then
-                                        net.send_chat_to('Can not spawn as '..gr:getName()..' in enemy/neutral zone or zone without enough resources' , v)
-                                        net.force_player_slot(v, 0, '')
-                                        break
+                            local zn = ZoneCommand.getZoneOfUnit(un:getName())
+                            if not zn then CarrierCommand.getCarrierOfUnit(un:getName()) end
+                            if not zn then FARPCommand.getFARPOfUnit(un:getName()) end
+
+                            if zn then
+                                local isDifferentSide = zn.side ~= un:getCoalition()
+                                local isNotSuported = zn.side == 1
+                                local noResources = zn.resource < Config.zoneSpawnCost
+
+                                local gr = event.initiator:getGroup()
+                                if isDifferentSide or noResources or isNotSuported then
+                                    blocked = true
+
+                                    for i,v in pairs(net.get_player_list()) do
+                                        if net.get_name(v) == pname then
+                                            net.send_chat_to('Can not spawn as '..gr:getName()..' in enemy/neutral zone or zone without enough resources' , v)
+                                            timer.scheduleFunction(function(param, time)
+                                                net.force_player_slot(param, 0, '')
+                                            end, v, timer.getTime()+0.1)
+                                            break
+                                        end
+                                    end
+
+                                    trigger.action.outTextForGroup(gr:getID(), 'Can not spawn as '..gr:getName()..' in enemy/neutral zone or zone without enough resources',5)
+                                    if event.initiatior and event.initiator:isExist() then 
+                                        event.initiator:destroy()
                                     end
                                 end
                             end
@@ -175,14 +192,16 @@ do
                     trigger.action.outTextForUnit(un:getID(), 'Taken off, survival bonus no longer secure.', 10)
                 end
 
-                local zn = CarrierCommand.getCarrierOfUnit(un:getName())
+                local zn = ZoneCommand.getZoneOfUnit(un:getName())
+                if not zn then zn = CarrierCommand.getCarrierOfUnit(un:getName()) end
+                if not zn then zn = FARPCommand.getFARPOfUnit(un:getName()) end
+
                 if zn then
-                    zn:removeResource(Config.carrierSpawnCost)
-                else
-                    zn = ZoneCommand.getZoneOfUnit(un:getName())
-                    if zn then
-                        zn:removeResource(Config.zoneSpawnCost)
-                    end
+                    local cost = Config.zoneSpawnCost
+                    if zn.isCarrier then cost = Config.carrierSpawnCost end
+                    if zn.isFARP then cost = 0 end
+
+                    zn:removeResource(cost)
                 end
 			end
 
@@ -192,6 +211,15 @@ do
                 if not zn then 
                     zn = CarrierCommand.getCarrierOfUnit(un:getName())
                 end
+                
+                if not zn then 
+                    zn = FARPCommand.getFARPOfUnit(un:getName())
+                    if zn and not zn:hasFeature(PlayerLogistics.buildables.satuplink) then
+                        trigger.action.outTextForUnit(un:getID(), zn.name..' lacks a Satellite Uplink. Can not secure survival bonus.', 10)
+                        return
+                    end
+                end
+
                 if un and un:isExist() and zn and zn.side == un:getCoalition() then
                     env.info('PlayerTracker - '..player..' has shut down engine of '..tostring(un:getID())..' '..un:getName()..' at '..zn.name)
                     self.context.stats[player][PlayerTracker.statTypes.survivalBonus] = self.context:getPlayerMinutes(player)
@@ -225,11 +253,15 @@ do
         end, {context = self}, timer.getTime()+60)
     end
 
-    function PlayerTracker:validateLanding(unit, player)
+    function PlayerTracker:validateLanding(unit, player, manual)
         local un = unit
         local zn = ZoneCommand.getZoneOfUnit(unit:getName())
         if not zn then 
             zn = CarrierCommand.getCarrierOfUnit(unit:getName())
+        end
+        
+        if not zn then 
+            zn = FARPCommand.getFARPOfUnit(unit:getName())
         end
 
         env.info('PlayerTracker - '..player..' landed in '..tostring(un:getID())..' '..un:getName())
@@ -245,14 +277,24 @@ do
                 if not zn then 
                     zn = CarrierCommand.getCarrierOfUnit(un:getName())
                 end
+                
+                if not zn then 
+                    zn = FARPCommand.getFARPOfUnit(unit:getName())
+                    if zn and not zn:hasFeature(PlayerLogistics.buildables.satuplink) then
+                        trigger.action.outTextForUnit(unit:getID(), zn.name..' lacks a Satellite Uplink', 10)
+                        return
+                    end
+                end
 
                 env.info('PlayerTracker - '..player..' checking if landed: '..tostring(isLanded))
 
-                if isLanded then
-                    if zn.isCarrier then
-                        zn:addResource(Config.carrierSpawnCost)
-                    else
-                        zn:addResource(Config.zoneSpawnCost)
+                if zn and isLanded then
+                    if not manual then
+                        if zn.isCarrier then
+                            zn:addResource(Config.carrierSpawnCost)
+                        else
+                            zn:addResource(Config.zoneSpawnCost)
+                        end
                     end
 
                     if param.context.tempStats[player] then 
@@ -367,8 +409,8 @@ do
 
     function PlayerTracker:menuSetup()
         
-        MenuRegistry:register(1, function(event, context)
-			if event.id == world.event.S_EVENT_BIRTH and event.initiator and event.initiator.getPlayerName then
+        MenuRegistry.register(1, function(event, context)
+			if (event.id == world.event.S_EVENT_PLAYER_ENTER_UNIT or event.id == world.event.S_EVENT_BIRTH) and event.initiator and event.initiator.getPlayerName then
 				local player = event.initiator:getPlayerName()
 				if player then
 					local groupid = event.initiator:getGroup():getID()
@@ -381,29 +423,28 @@ do
 
                     if not context.groupMenus[groupid] then
                         
-                        local menu = missionCommands.addSubMenuForGroup(groupid, 'Information')
-                        missionCommands.addCommandForGroup(groupid, 'Player', menu, Utils.log(context.showGroupStats), context, groupname)
+                        local menu = missionCommands.addSubMenuForGroup(groupid, 'Player')
+                        missionCommands.addCommandForGroup(groupid, 'Stats', menu, Utils.log(context.showGroupStats), context, groupname)
                         missionCommands.addCommandForGroup(groupid, 'Frequencies', menu, Utils.log(context.showFrequencies), context, groupname)
                         missionCommands.addCommandForGroup(groupid, 'Validate Landing', menu, Utils.log(context.validateLandingMenu), context, groupname)
+
+                        local cmenu = missionCommands.addSubMenuForGroup(groupid, 'Config', menu)
+                        local missionWarningMenu = missionCommands.addSubMenuForGroup(groupid, 'No mission warning', cmenu)
+                        missionCommands.addCommandForGroup(groupid, 'Activate', missionWarningMenu, Utils.log(context.setNoMissionWarning), context, groupname, true)
+                        missionCommands.addCommandForGroup(groupid, 'Deactivate', missionWarningMenu, Utils.log(context.setNoMissionWarning), context, groupname, false)
+
+                        local missionWarningMenu = missionCommands.addSubMenuForGroup(groupid, 'GCI Text reports', cmenu)
+                        missionCommands.addCommandForGroup(groupid, 'Activate', missionWarningMenu, Utils.log(context.setGCITextReports), context, groupname, true)
+                        missionCommands.addCommandForGroup(groupid, 'Deactivate', missionWarningMenu, Utils.log(context.setGCITextReports), context, groupname, false)
                         
                         context.groupMenus[groupid] = menu
-                    end
-				end
-			elseif (event.id == world.event.S_EVENT_PLAYER_LEAVE_UNIT or event.id == world.event.S_EVENT_DEAD) and event.initiator and event.initiator.getPlayerName then
-                local player = event.initiator:getPlayerName()
-				if player then
-					local groupid = event.initiator:getGroup():getID()
-					
-                    if context.groupMenus[groupid] then
-                        missionCommands.removeItemForGroup(groupid, context.groupMenus[groupid])
-                        context.groupMenus[groupid] = nil
                     end
 				end
             end
 		end, self)
 
-        MenuRegistry:register(5, function(event, context)
-			if event.id == world.event.S_EVENT_BIRTH and event.initiator and event.initiator.getPlayerName then
+        MenuRegistry.register(5, function(event, context)
+			if (event.id == world.event.S_EVENT_PLAYER_ENTER_UNIT or event.id == world.event.S_EVENT_BIRTH) and event.initiator and event.initiator.getPlayerName then
 				local player = event.initiator:getPlayerName()
 				if player then
                     local rank = context:getPlayerRank(player)
@@ -411,21 +452,6 @@ do
 
                     local groupid = event.initiator:getGroup():getID()
                     local groupname = event.initiator:getGroup():getName()
-                    
-                    if context.groupConfigMenus[groupid] then
-                        missionCommands.removeItemForGroup(groupid, context.groupConfigMenus[groupid])
-                        context.groupConfigMenus[groupid] = nil
-                    end
-
-                    if not context.groupConfigMenus[groupid] then
-                        
-                        local menu = missionCommands.addSubMenuForGroup(groupid, 'Config')
-                        local missionWarningMenu = missionCommands.addSubMenuForGroup(groupid, 'No mission warning', menu)
-                        missionCommands.addCommandForGroup(groupid, 'Activate', missionWarningMenu, Utils.log(context.setNoMissionWarning), context, groupname, true)
-                        missionCommands.addCommandForGroup(groupid, 'Deactivate', missionWarningMenu, Utils.log(context.setNoMissionWarning), context, groupname, false)
-              
-                        context.groupConfigMenus[groupid] = menu
-                    end
 
                     if context.groupShopMenus[groupid] then
                         missionCommands.removeItemForGroup(groupid, context.groupShopMenus[groupid])
@@ -442,7 +468,6 @@ do
                         local menu = missionCommands.addSubMenuForGroup(groupid, 'Command & Control')
                         missionCommands.addCommandForGroup(groupid, 'Deploy Smoke ['..PlayerTracker.cmdShopPrices[PlayerTracker.cmdShopTypes.smoke]..' CMD]', menu, Utils.log(context.buyCommand), context, groupname, PlayerTracker.cmdShopTypes.smoke)
                         missionCommands.addCommandForGroup(groupid, 'Hack enemy comms ['..PlayerTracker.cmdShopPrices[PlayerTracker.cmdShopTypes.bribe1]..' CMD]', menu, Utils.log(context.buyCommand), context, groupname, PlayerTracker.cmdShopTypes.bribe1)
-                        missionCommands.addCommandForGroup(groupid, 'Prioritize zone ['..PlayerTracker.cmdShopPrices[PlayerTracker.cmdShopTypes.prio]..' CMD]', menu, Utils.log(context.buyCommand), context, groupname, PlayerTracker.cmdShopTypes.prio)
                         missionCommands.addCommandForGroup(groupid, 'Bribe enemy officer ['..PlayerTracker.cmdShopPrices[PlayerTracker.cmdShopTypes.bribe2]..' CMD]', menu, Utils.log(context.buyCommand), context, groupname, PlayerTracker.cmdShopTypes.bribe2)
                         missionCommands.addCommandForGroup(groupid, 'Shell zone with artillery ['..PlayerTracker.cmdShopPrices[PlayerTracker.cmdShopTypes.artillery]..' CMD]', menu, Utils.log(context.buyCommand), context, groupname, PlayerTracker.cmdShopTypes.artillery)
                         missionCommands.addCommandForGroup(groupid, 'Sabotage enemy zone ['..PlayerTracker.cmdShopPrices[PlayerTracker.cmdShopTypes.sabotage1]..' CMD]', menu, Utils.log(context.buyCommand), context, groupname, PlayerTracker.cmdShopTypes.sabotage1)
@@ -452,21 +477,6 @@ do
                         end
 
                         context.groupShopMenus[groupid] = menu
-                    end
-				end
-			elseif (event.id == world.event.S_EVENT_PLAYER_LEAVE_UNIT or event.id == world.event.S_EVENT_DEAD) and event.initiator and event.initiator.getPlayerName then
-                local player = event.initiator:getPlayerName()
-				if player then
-					local groupid = event.initiator:getGroup():getID()
-					
-                    if context.groupShopMenus[groupid] then
-                        missionCommands.removeItemForGroup(groupid, context.groupShopMenus[groupid])
-                        context.groupShopMenus[groupid] = nil
-                    end
-
-                    if context.groupTgtMenus[groupid] then
-                        missionCommands.removeItemForGroup(groupid, context.groupTgtMenus[groupid])
-                        context.groupTgtMenus[groupid] = nil
                     end
 				end
             end
@@ -509,6 +519,19 @@ do
                 local player = un:getPlayerName()
                 if player then
                     self:setPlayerConfig(player, "noMissionWarning", active)
+                end
+            end
+        end
+    end   
+    
+    function PlayerTracker:setGCITextReports(groupname, active)
+        local gr = Group.getByName(groupname)
+        if gr and gr:getSize()>0 then 
+            local un = gr:getUnit(1)
+            if un then
+                local player = un:getPlayerName()
+                if player then
+                    self:setPlayerConfig(player, "gciTextReports", active)
                 end
             end
         end
@@ -561,20 +584,6 @@ do
                             canPurchase = false
                         end
 
-                    elseif itemType== PlayerTracker.cmdShopTypes.prio then
-
-                        self.groupTgtMenus[gr:getID()] = MenuRegistry.showTargetZoneMenu(gr:getID(), "Priority zone", function(params) 
-                            BattlefieldManager.overridePriority(2, params.zone, 4)
-                            trigger.action.outTextForGroup(params.groupid, "Blue is concentrating efforts on "..params.zone.name.." for the next two hours", 5)
-                        end, nil, 1)
-
-                        if self.groupTgtMenus[gr:getID()] then
-                            trigger.action.outTextForGroup(gr:getID(), "Select target from radio menu",10)
-                        else
-                            trigger.action.outTextForGroup(gr:getID(), "No valid targets available",10)
-                            canPurchase = false
-                        end
-
                     elseif itemType== PlayerTracker.cmdShopTypes.bribe1 then
 
                         timer.scheduleFunction(function(params, time)
@@ -583,6 +592,7 @@ do
                                 if v.side == 1 and v.distToFront <= 1 then
                                     if math.random()<0.5 then
                                         v:reveal()
+                                        DependencyManager.get("ReconManager"):revealEnemyInZone(v, nil, 1, 1)
                                         count = count + 1
                                     end
                                 end
@@ -603,6 +613,7 @@ do
                                 if v.side == 1 then
                                     if math.random()<0.5 then
                                         v:reveal()
+                                        DependencyManager.get("ReconManager"):revealEnemyInZone(v, nil, 1, 0.5)
                                         count = count + 1
                                     end
                                 end
@@ -668,7 +679,7 @@ do
         if gr then 
             for i,v in pairs(gr:getUnits()) do
                 if v.getPlayerName and v:getPlayerName() then
-                    self:validateLanding(v, v:getPlayerName())
+                    self:validateLanding(v, v:getPlayerName(), true)
                 end
             end
         end
@@ -692,10 +703,44 @@ do
 
                             if rank then
                                 message = message..'\nRank: '..rank.name
+
+                                if rank.cmdChance > 0 then
+                                    message = message..'\nCMD rolls per mission: '..rank.cmdTrys
+                                    message = message..'\nCMD chance per roll: '..math.floor(rank.cmdChance*100)..'%'
+                                end
                             end
 
                             if nextRank then
                                 message = message..'\nXP needed for promotion: '..(nextRank.requiredXP-xp)
+                                if rank then
+                                    message = message..'\nPromotion rewards:'
+
+                                    if rank.cmdTrys == 0 and nextRank.cmdTrys > 0 then
+                                        message = message..'\n  Command and Control unlocked'
+                                    end
+
+                                    if nextRank.cmdAward and nextRank.cmdAward>0 then
+                                        message = message..'\n  +'..nextRank.cmdAward..' CMD'
+                                    end
+                                    
+                                    if nextRank.cmdTrys > rank.cmdTrys then
+                                        message = message..'\n  CMD rolls per mission: +'..(nextRank.cmdTrys-rank.cmdTrys)
+                                    end
+                                
+                                    if nextRank.cmdChance > rank.cmdChance then
+                                        message = message..'\n  CMD chance per roll: +'..math.floor((nextRank.cmdChance-rank.cmdChance)*100)..'%'
+                                    end
+
+                                    if rank.allowCarrierSupport ~= nextRank.allowCarrierSupport then
+                                        message = message..'\n  Carrier support unlocked'
+                                    end
+
+                                    if rank.allowCarrierCommand ~= nextRank.allowCarrierCommand then
+                                        message = message..'\n  Carrier command unlocked'
+                                    end
+
+                                    message = message..'\n\n'
+                                end
                             end
                         end
 
@@ -739,12 +784,57 @@ do
         cfg[setting] = value
     end
 
+    function PlayerTracker.callsignToString(callsign)
+        return callsign.name..' '..callsign.num1..'-'..callsign.num2
+    end
+
+    local function isCallsignTaken(choice, config)
+        for i,v in pairs(config) do
+            if PlayerTracker.callsignToString(v.gci_callsign) == PlayerTracker.callsignToString(choice) then
+                return true
+            end
+        end
+    end
+
+    function PlayerTracker:generateCallsign(forcename)
+        local choice = ''
+        if forcename then
+            choice = { name = forcename, num1=1, num2=1 }
+        else
+            choice = { name = PlayerTracker.callsigns[math.random(1,#PlayerTracker.callsigns)], num1=1, num2=1 }
+            
+            if isCallsignTaken(choice, self.config) then
+                for i=1,10,1 do
+                    choice = { name = PlayerTracker.callsigns[math.random(1,#PlayerTracker.callsigns)], num1=1, num2=1 }
+                    if not isCallsignTaken(choice, self.config) then
+                        break
+                    end
+                end
+            end
+        end 
+
+        while isCallsignTaken(choice, self.config) do
+            if choice.num2 < 9 then 
+                choice.num2 = choice.num2 + 1 
+            elseif choice.num1 < 9 then
+                choice.num1 = choice.num1 + 1
+                choice.num2 = 1
+            else
+                break
+            end
+        end
+
+        return choice
+    end
+
     function PlayerTracker:getPlayerConfig(player)
         if not self.config[player] then
             self.config[player] = {
                 noMissionWarning = false,
+                gciTextReports = true,
                 gci_warning_radius = nil,
-                gci_metric = nil
+                gci_metric = nil,
+                gci_callsign = self:generateCallsign()
             }
         end
 

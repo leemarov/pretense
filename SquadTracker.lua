@@ -1,6 +1,9 @@
 
 SquadTracker = {}
 do
+    SquadTracker.infilTime = 10*60
+    SquadTracker.exfilTime = 10*60
+
 	function SquadTracker:new()
 		local obj = {}
 		obj.activeInfantrySquads = {}
@@ -47,19 +50,34 @@ do
             [land.SurfaceType.RUNWAY] = true,
         })
 
-        self.activeInfantrySquads[save.name] = {
+        self.activeInfantrySquads[save.name] = SquadBase.create({
             name = save.name, 
             position = save.position, 
+            deployPos = save.deployPos,
+            targetPos = save.targetPos,
             state = save.state, 
             remainingStateTime=save.remainingStateTime, 
             shouldDiscover = save.discovered,
             discovered = save.discovered,
             data = save.data
-        }
+        })
 
         if save.state == "extractReady" then
             MissionTargetRegistry.addSquad(self.activeInfantrySquads[save.name])
         end
+
+        timer.scheduleFunction(function(param, time)
+            if param.squad.state == "infil" then
+                local tgzone = param.context:getTarget(param.squad)
+                if tgzone then
+                    local gr = Group.getByName(param.squad.name)
+                    if gr then TaskExtensions.sendToPoint(gr, tgzone.zone.point) end
+                end
+            elseif param.state == "exfil" then
+                local gr = Group.getByName(param.squad.name)
+                if gr then TaskExtensions.sendToPoint(gr, param.squad.deployPos) end
+            end
+        end, {squad = self.activeInfantrySquads[save.name], context = self}, timer.getTime()+2)
         
         env.info('SquadTracker - '..save.name..'('..save.data.type..') restored')
     end
@@ -78,7 +96,7 @@ do
     end
 
     function SquadTracker:registerInfantry(infantryData, groupname, position)
-        self.activeInfantrySquads[groupname] = {name = groupname, position = position, state = "deployed", remainingStateTime=0, data = infantryData}
+        self.activeInfantrySquads[groupname] = SquadBase.create({name = groupname, deployPos = position, position = position, state = "deployed", remainingStateTime=0, data = infantryData})
         
         env.info('SquadTracker - '..groupname..'('..infantryData.type..') deployed')
     end
@@ -116,7 +134,7 @@ do
         local squad = nil
 
         for i,v in pairs(self.activeInfantrySquads) do
-            if v.state == 'extractReady' and v.data.side == onside then
+            if v.state == 'extractReady' or v.state == "exfil" and v.data.side == onside then
                 local gr = Group.getByName(v.name)
                 if gr and gr:getSize()>0 then
                     local dist = mist.utils.get2DDist(sourcePoint, gr:getUnit(1):getPoint())
@@ -129,173 +147,66 @@ do
         end
 
         if squad then
+            local gr = Group.getByName(squad.name)
+            if gr and gr:getSize()>0 then
+                for i,v in ipairs(gr:getUnits()) do
+                    local dist = mist.utils.get2DDist(sourcePoint, v:getPoint())
+                    if dist < minDist then minDist = dist end
+                end
+            end
             return squad, minDist
         end
     end
-
-    --[[
-        infantry states:
-            deployed - just spawned not processed yet
-            working - started main activity, last until jobtime elapses
-            extractReady - job completed waiting for extract, lasts until extracttime elapses
-            mia - missing in action, extracttime elapsed without extraction, group is forever lost
-            complete - mission complete no extraction necessary
-            extracted - squad was loaded into a player helicopter
-    ]] 
-    function SquadTracker:processInfantrySquad(squad)
+    
+    function SquadTracker:getTarget(squad)
         local gr = Group.getByName(squad.name)
-        if not gr then return true end
-		if gr:getSize()==0 then 
-			gr:destroy()
-			return true
-		end
+        if not gr then return end
+		if gr:getSize()==0 then return end
 
-        squad.remainingStateTime = squad.remainingStateTime - 10
+        return self:getTargetZone(squad.position, squad.data.type, gr:getCoalition())
+    end
 
-        if squad.state == 'deployed' then
-            env.info('SquadTracker - '..squad.name..'('..squad.data.type..') started working for '..squad.data.jobtime..' seconds')
-            squad.state = 'working'
-            squad.remainingStateTime = squad.data.jobtime
-        elseif squad.state == 'working' then
-            if squad.remainingStateTime <=0 then
-                env.info('SquadTracker - '..squad.name..'('..squad.data.type..') job complete, waiting '..squad.data.extracttime..' seconds for extract')
-                
-                if squad.data.type == PlayerLogistics.infantryTypes.capture then
-                    local zn = ZoneCommand.getZoneOfPoint(squad.position)
-                    if zn and zn.side == 0 then
-                        squad.state = "complete"
-                        squad.remainingStateTime = 0
-                        zn:capture(gr:getCoalition())
-                        gr:destroy()
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') no extraction required, deleting')
-                        return true
-                    else
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') not in zone, cant capture')
-                    end
-                elseif squad.data.type == PlayerLogistics.infantryTypes.engineer then
-                    local zn = ZoneCommand.getZoneOfPoint(squad.position)
-                    if zn and zn.side == gr:getCoalition() then
-                        zn:boostProduction(3000)
-                        squad.state = "complete"
-                        squad.remainingStateTime = 0
-                        gr:destroy()
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') no extraction required, deleting')
-                        return true
-                    else
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') not in zone, cant boost')
-                    end
-                elseif squad.data.type == PlayerLogistics.infantryTypes.sabotage then
-                    local zn = ZoneCommand.getZoneOfPoint(squad.position)
-                    if zn and zn.side ~= gr:getCoalition() and zn.side ~= 0 then
-                        zn:sabotage(1000, squad.position)
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') sabotaged '..zn.name)
-                    else
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') not in zone, cant sabotage')
-                    end
-                elseif squad.data.type == PlayerLogistics.infantryTypes.spy then
-                    local zn = ZoneCommand.getZoneOfPoint(squad.position)
-                    if zn and zn.side ~= gr:getCoalition() and zn.side ~= 0 then
-                        zn:reveal()
-
-                        if zn.neighbours then
-                            for _,v in pairs(zn.neighbours) do
-                                if v.side ~= gr:getCoalition() and v.side ~= 0 then
-                                    v:reveal()
-                                    if v:hasUnitWithAttributeOnSide({'Buildings'}, v.side) then
-                                        local tgt = v:getRandomUnitWithAttributeOnSide({'Buildings'}, v.side)
-                                        if tgt then
-                                            MissionTargetRegistry.addStrikeTarget(tgt, v)
-                                        end
-                                    end
-                                end
-                            end
-                        end
-
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') infiltrated into '..zn.name)
-                    else
-                        env.info('SquadTracker - '..squad.name..'('..squad.data.type..') not in zone, cant infiltrate')
-                    end
-                elseif squad.data.type == PlayerLogistics.infantryTypes.ambush then
-                    local cnt = gr:getController()
-                    cnt:setCommand({ 
-                        id = 'SetInvisible', 
-                        params = { 
-                            value = false 
-                        } 
-                    })
-                end
-
-                squad.state = 'extractReady'
-                squad.remainingStateTime = squad.data.extracttime
-                MissionTargetRegistry.addSquad(squad)
-			else
-                if squad.data.type == PlayerLogistics.infantryTypes.ambush then
-                    if not squad.discovered then
-                        local frcnt = gr:getUnit(1):getController()
-                        local targets = frcnt:getDetectedTargets()
-                        local isTargetClose = false
-                        if #targets > 0 then
-                            for _,tgt in ipairs(targets) do
-                                if tgt.visible and tgt.object then
-                                    if tgt.object.isExist and tgt.object:isExist() and tgt.object.getCoalition and tgt.object:getCoalition()~=gr:getCoalition() and 
-                                    Object.getCategory(tgt.object) == 1 then
-                                        local dist = mist.utils.get3DDist(gr:getUnit(1):getPoint(), tgt.object:getPoint())
-                                        if dist < 100 then
-                                            isTargetClose = true
-                                            break
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                        
-                        if isTargetClose then
-                            squad.discovered = true
-                            local cnt = gr:getController()
-                            cnt:setCommand({ 
-                                id = 'SetInvisible',
-                                params = { 
-                                    value = false 
-                                }
-                            })
-                        end
-                    elseif squad.shouldDiscover then
-                        squad.shouldDiscover = nil
-                        local cnt = gr:getController()
-                        cnt:setCommand({ 
-                            id = 'SetInvisible',
-                            params = { 
-                                value = false 
-                            }
-                        })
-                    end
-                end
+    function SquadTracker:getTargetZone(position, type, squadside)
+        if type == PlayerLogistics.infantryTypes.capture then
+            local zn, dist = ZoneCommand.getClosestZoneToPoint(position, 0)
+            if zn and dist < 2000+zn.zone.radius then
+                return zn
             end
-        elseif squad.state == 'extractReady' then
-            if squad.remainingStateTime <= 0 then
-                env.info('SquadTracker - '..squad.name..'('..squad.data.type..') extract time elapsed, group MIA')
-                squad.state = 'mia'
-                squad.remainingStateTime = 0
-			    gr:destroy()
-                MissionTargetRegistry.removeSquad(squad)
-                return true
+        elseif type == PlayerLogistics.infantryTypes.engineer then
+            local zn, dist = ZoneCommand.getClosestZoneToPoint(position, squadside)
+            if zn and dist < 2000+zn.zone.radius then
+                return zn
             end
-
-            if not squad.lastMarkerDeployedTime then
-                squad.lastMarkerDeployedTime = timer.getAbsTime() - (10*60)
+        elseif type == PlayerLogistics.infantryTypes.sabotage then
+            local zn, dist = ZoneCommand.getClosestZoneToPoint(position, Utils.getEnemy(squadside))
+            if zn and dist < 2000+zn.zone.radius then
+                return zn
             end
-
-            if timer.getAbsTime() - squad.lastMarkerDeployedTime > (5*60) then
-                if gr:getSize()>0 then
-                    local unPos = gr:getUnit(1):getPoint()
-                    local p = Utils.getPointOnSurface(unPos)
-                    p.x = p.x + math.random(-5,5)
-                    p.z = p.z + math.random(-5,5)
-		            trigger.action.smoke(p, trigger.smokeColor.Blue)
-                    squad.lastMarkerDeployedTime = timer.getAbsTime()
-                end
+        elseif type == PlayerLogistics.infantryTypes.spy then
+            local zn, dist = ZoneCommand.getClosestZoneToPoint(position, Utils.getEnemy(squadside))
+            if zn and dist < 2000+zn.zone.radius then
+                return zn
             end
+        elseif type == PlayerLogistics.infantryTypes.ambush then
+        elseif type == PlayerLogistics.infantryTypes.assault then
+        elseif type == PlayerLogistics.infantryTypes.manpads then
+        elseif type == PlayerLogistics.infantryTypes.rapier then
         end
+    end
+
+    function SquadTracker:playSound(squad, state)
+        local pos = { 
+            x = squad.position.x,
+            y = squad.position.y + 200,
+            z = squad.position.z,
+        }
+
+        local type = squad.data.type
+        TransmissionManager.queueTransmission('squads.'..type..'.'..state, TransmissionManager.radios.infantry, pos)
+    end
+
+    function SquadTracker:processInfantrySquad(squad)
+        return squad:process()
     end
 end
 

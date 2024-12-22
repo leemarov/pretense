@@ -15,6 +15,36 @@ do
         return 'CAS'
     end
 
+    function CAS_Hard:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        
+        local zn = ZoneCommand.getZoneByName(self.target)
+        
+        local kill = ObjDestroyUnitsWithAttributeAtZone:new()
+        kill:initialize(self, {
+            attr = {"Ground Units"},
+            amount = 1,
+            killed = 0,
+            tgtzone = zn,
+            hits = 0
+        })
+        table.insert(self.objectives, kill)
+
+        local clear = ObjClearZoneOfUnitsWithAttribute:new()
+        clear:initialize(self, {
+            attr = {"Ground Units"},
+            tgtzone = zn
+        })
+        table.insert(self.objectives, clear)
+
+        description = description..'   Clear '..zn.name..' of ground units'
+        self.info = {
+            targetzone = zn
+        }
+        self.description = self.description..description
+    end
+
     function CAS_Hard:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
@@ -46,7 +76,8 @@ do
                 attr = {"Ground Units"},
                 amount = 1,
                 killed = 0,
-                tgtzone = zn
+                tgtzone = zn,
+                hits = 0
             })
             table.insert(self.objectives, kill)
 

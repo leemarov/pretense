@@ -37,6 +37,48 @@ do
         end
     end
 
+    function DeploySquad:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+
+
+        local tgt = ZoneCommand.getZoneByName(self.target)
+        if tgt then
+            local squadType = nil
+
+            if tgt.side == 0 then
+                squadType = PlayerLogistics.infantryTypes.capture
+            elseif tgt.side == 1 then
+                if math.random()>0.5 then
+                    squadType = PlayerLogistics.infantryTypes.sabotage
+                else
+                    squadType = PlayerLogistics.infantryTypes.spy
+                end
+            elseif tgt.side == 2 then
+                squadType = PlayerLogistics.infantryTypes.engineer
+            end
+
+            local deploy = ObjDeploySquad:new()
+            deploy:initialize(self, {
+                squadType = squadType,
+                targetZone = tgt,
+                requiredZoneSide = tgt.side,
+                unloadedType = nil,
+                unloadedAt = nil
+            })
+            table.insert(self.objectives, deploy)
+
+            local infName = PlayerLogistics.getInfantryName(squadType)
+
+            description = description..'   Deploy '..infName..' to '..tgt.name
+            
+            self.info = {
+                targetzone = tgt
+            }
+        end
+        self.description = self.description..description
+    end
+
     function DeploySquad:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''

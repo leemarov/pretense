@@ -112,7 +112,12 @@ do
 			pnt = mist.getRandomPointInZone(spname)
 		end
 
-		local newgr = Spawner.createObject(product.name, product.template, pnt, product.side, nil, nil, acceptedSurface, spname)
+		local template = product.template
+		if product.templates then
+			template = product.templates[math.random(1, #product.templates)]
+		end
+
+		local newgr = Spawner.createObject(product.name, template, pnt, product.side, nil, nil, acceptedSurface, spname)
 
 		return newgr
 	end

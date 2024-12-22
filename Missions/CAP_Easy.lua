@@ -20,6 +20,36 @@ do
         return unit:hasAttribute('Planes')
     end
 
+    function CAP_Easy:createObjective()
+        self.completionType = Mission.completion_type.any
+        local description = ''
+        local zn1 = ZoneCommand.getZoneByName(self.target)
+
+        local patrol1 = ObjPlayerCloseToZone:new()
+        patrol1:initialize(self, {
+            target = zn1,
+            range = 20000,
+            amount = 15*60,
+            maxAmount = 15*60,
+            lastUpdate = 0
+        })
+
+        table.insert(self.objectives, patrol1)
+        description = description..'   Patrol airspace near '..zn1.name..'\n   OR\n'
+
+        local kills = ObjDestroyUnitsWithAttribute:new()
+        kills:initialize(self, {
+            attr = {'Planes', 'Helicopters'},
+            amount = math.random(2,4),
+            killed = 0,
+            hits = 0
+        })
+
+        table.insert(self.objectives, kills)
+        description = description..'   Kill '..kills.param.amount..' aircraft'
+        self.description = self.description..description
+    end
+
     function CAP_Easy:generateObjectives()
         self.completionType = Mission.completion_type.any
         local description = ''
@@ -51,7 +81,8 @@ do
         kills:initialize(self, {
             attr = {'Planes', 'Helicopters'},
             amount = math.random(2,4),
-            killed = 0 
+            killed = 0,
+            hits = 0
         })
 
         table.insert(self.objectives, kills)

@@ -13,6 +13,32 @@ do
         return 'Runway Attack'
     end
 
+    function Anti_Runway:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        local viableZones = {}
+       
+        local tgt = ZoneCommand.getZoneByName(self.target)
+
+        local rewardDef = RewardDefinitions.missions[self.type]
+
+        local bomb = ObjBombInsideZone:new()
+        bomb:initialize(self,{
+            targetZone = tgt,
+            max = 20,
+            required = 5,
+            dropped = 0,
+            isFinishStarted = false,
+            bonus = {
+                [PlayerTracker.statTypes.xp] = rewardDef.xp.boost
+            }
+        })
+
+        table.insert(self.objectives, bomb)
+        description = description..'   Bomb runway at '..bomb.param.targetZone.name
+        self.description = self.description..description
+    end
+
     function Anti_Runway:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''

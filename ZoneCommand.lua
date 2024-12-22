@@ -4,7 +4,6 @@ do
 	ZoneCommand.currentZoneIndex = 1000
 	ZoneCommand.allZones = {}
 	ZoneCommand.buildSpeed = Config.buildSpeed
-	ZoneCommand.supplyBuildSpeed = Config.supplyBuildSpeed
 	ZoneCommand.missionValidChance = 0.9
 	ZoneCommand.missionBuildSpeedReduction = Config.missionBuildSpeedReduction
 	ZoneCommand.revealTime = 0
@@ -31,7 +30,6 @@ do
 		patrol = 'patrol',
 		sead = 'sead',
 		assault = 'assault',
-		bai = 'bai',
 		supply_transfer = 'supply_transfer',
 		awacs = 'awacs',
 		tanker = 'tanker'
@@ -48,6 +46,7 @@ do
 		obj.keepActive = false
 		obj.boostScale = 1.0
 		obj.extraBuildResources = 0
+		obj.sabotageDebt = 0
 		obj.reservedMissions = {}
 		obj.isHeloSpawn = false
 		obj.isPlaneSpawn = false
@@ -66,31 +65,7 @@ do
 		
 		obj.built = {}
 		obj.income = 0
-		
-		--group restrictions
-		obj.spawns = {}
-		for i,v in pairs(mist.DBs.groupsByName) do
-			if v.units[1].skill == 'Client' then
-				local zn = obj.zone
-				local pos3d = {
-					x = v.units[1].point.x,
-					y = 0,
-					z = v.units[1].point.y
-				}
 				
-				if zn and zn:isInside(pos3d) then
-					local coa = 0
-					if v.coalition=='blue' then
-						coa = 2
-					elseif v.coalition=='red' then
-						coa = 1
-					end
-					
-					table.insert(obj.spawns, {name=i, side=coa})
-				end
-			end
-		end
-		
 		--draw graphics
 		local color = {0.7,0.7,0.7,0.3}
 		if obj.side == 1 then
@@ -134,18 +109,8 @@ do
 		
 		obj:refreshText()
 		obj:start()
-		obj:refreshSpawnBlocking()
 		ZoneCommand.allZones[obj.name] = obj
 		return obj
-	end
-	
-	function ZoneCommand:refreshSpawnBlocking()
-		for _,v in ipairs(self.spawns) do
-			local isDifferentSide = v.side ~= self.side
-			local noResources = self.resource < Config.zoneSpawnCost
-
-			trigger.action.setUserFlag(v.name, isDifferentSide or noResources)
-		end
 	end
 	
 	function ZoneCommand.setNeighbours()
@@ -198,11 +163,11 @@ do
 		return nil
 	end
 
-	function ZoneCommand.getClosestZoneToPoint(point, side)
+	function ZoneCommand.getClosestZoneToPoint(point, side, invert)
 		local minDist = 9999999
 		local closest = nil
 		for i,v in pairs(ZoneCommand.allZones) do
-			if not side or side == v.side then
+			if not side or (not invert and side == v.side) or (invert and side ~= v.side) then
 				local d = mist.utils.get2DDist(v.zone.point, point)
 				if d < minDist then
 					minDist = d
@@ -230,6 +195,103 @@ do
 		env.info('ZoneCommand:boostProduction - '..self.name..' production boosted by '..amount..' to a total of '..self.extraBuildResources)
 	end
 
+	function ZoneCommand:getProductOfType(type, mistype)
+		local prods = {}
+		for i,v in ipairs(self.upgrades) do
+			if v.type == type then 
+				prods[v.name] = v
+			end
+
+			for i2,v2 in ipairs(v) do
+				for i3,v3 in ipairs(v2.products) do
+					if v3.type == type then
+						if mistype then 
+							if v3.missionType == mistype then
+								prods[v3.name] = v3
+							end
+						else
+							prods[v3.name] = v3
+						end
+					end
+				end
+			end
+		end
+
+		for _,v in pairs(prods) do
+			if not StrategicAI.isProductBuilt(v) then
+				return v
+			end
+		end
+	end
+
+	function ZoneCommand:pushMisOfType(mistype) 
+		local aimises = {}
+		for i,v in ipairs(self.upgrades) do
+			for i2,v2 in ipairs(v) do
+				for i3,v3 in ipairs(v2.products) do
+					if v3.type == 'mission' then 
+						if v3.missionType == mistype then
+							aimises[v3.name] = v3
+						end
+					end
+				end
+			end
+		end
+
+		for _,v in pairs(aimises) do
+			if not StrategicAI.isProductBuilt(v) then
+				StrategicAI.pushResource(v)
+				break
+			end
+		end
+	end
+
+	function ZoneCommand:canSupply(target, type, amount)
+		if target.side~=0 and self.side ~= target.side then return false end
+
+		if self:criticalOnSupplies() then return false end
+
+		--if self.resource - amount <= self.spendTreshold then return false end
+
+		if target.side ~= 0 then
+			if target:criticalOnSupplies() then
+				if self.distToFront < target.distToFront then return false end
+			else
+				if self.distToFront <= target.distToFront then return false end
+			end
+
+			if (self.resource*2) < target.resource then return false end
+		end
+		
+		if self.resource < amount then return false end
+		
+		if type=='air' then
+			local dist = mist.utils.get2DDist(self.zone.point, target.zone.point)
+			if dist > 50000 then return false end
+		elseif type=='convoy' then
+			if not self.neighbours[target.name] then return false end
+			if DependencyManager.get("ConnectionManager"):isRoadBlocked(self.name, target.name) then return false end
+		elseif type=='transfer' and target.side == self.side then
+			if not self.neighbours[target.name] then return false end
+		end
+
+		return true
+	end
+
+	function ZoneCommand:canAttack(target, type)
+		if target.side == self.side then return false end
+
+		if type=='assault' then
+			if not self.neighbours[target.name] then return false end
+			if DependencyManager.get("ConnectionManager"):isRoadBlocked(self.name, target.name) then return false end
+		elseif type=='cas_helo' then
+			local dist = mist.utils.get2DDist(self.zone.point, target.zone.point)
+			if dist > 50000 then return false end
+		end
+
+		return true
+	end
+
 	function ZoneCommand:sabotage(explosionSize, sourcePoint)
 		local minDist = 99999999
 		local closest = nil
@@ -253,8 +315,24 @@ do
 		end
 
 		local damagedResources = math.random(2000,5000)
-		self:removeResource(damagedResources)
+		self.sabotageDebt = damagedResources
 		self:refreshText()
+	end
+
+	local function missionToSymbol(type)
+		if type == ZoneCommand.missionTypes.supply_transfer then return 'x' end
+		if type == ZoneCommand.missionTypes.supply_air then return 's' end
+		if type == ZoneCommand.missionTypes.supply_convoy then return 's' end
+		if type == ZoneCommand.missionTypes.assault then return 't' end
+		if type == ZoneCommand.missionTypes.awacs then return 'a' end
+		if type == ZoneCommand.missionTypes.cas then return 'c' end
+		if type == ZoneCommand.missionTypes.cas_helo then return 'c' end
+		if type == ZoneCommand.missionTypes.patrol then return 'f' end
+		if type == ZoneCommand.missionTypes.sead then return 'r' end
+		if type == ZoneCommand.missionTypes.strike then return 'b' end
+		if type == ZoneCommand.missionTypes.tanker then return 'g' end
+
+		return 'o'
 	end
 	
 	function ZoneCommand:refreshText()
@@ -285,6 +363,11 @@ do
 			
 			mBuild = '\n['..job..' '..math.min(math.floor((self.currentMissionBuild.progress/self.currentMissionBuild.product.cost)*100),100)..'%]'
 		end
+
+		if self.sabotageDebt > 0 then
+			build = '\n[Sabotaged]'
+			mBuild = ''
+		end
 		
 		local status=''
 		if self.side ~= 0 and self:criticalOnSupplies() then
@@ -298,10 +381,23 @@ do
 			color = {0,0,0.7,1}
 		end
 
+		local readyToDeploy = ''
+		if Config.showInventory and self.side ~= 0 then
+			for i,v in pairs(StrategicAI.resources[self.side]) do
+				if v.owner.name == self.name then
+					readyToDeploy = readyToDeploy..missionToSymbol(v.missionType)
+				end
+			end
+		end
+
 		--trigger.action.setMarkupColor(1000+self.index, color)
 		trigger.action.setMarkupColor(2000+self.index, color)
 
 		local label = '['..self.resource..'/'..self.maxResource..']'..status..build..mBuild
+
+		if #readyToDeploy > 0 then
+			label = label..'\n'..readyToDeploy
+		end
 
 		if self.side == 1 then
 			--trigger.action.setMarkupText(1000+self.index, self.name..label)
@@ -326,7 +422,6 @@ do
 	
 	function ZoneCommand:setSide(side)
 		self.side = side
-		self:refreshSpawnBlocking()
 
 		if side == 0 then
 			self.revealTime = 0
@@ -370,17 +465,15 @@ do
 	function ZoneCommand:addResource(amount)
 		self.resource = self.resource+amount
 		self.resource = math.floor(math.min(self.resource, self.maxResource))
-		self:refreshSpawnBlocking()
 	end
 	
 	function ZoneCommand:removeResource(amount)
 		self.resource = self.resource-amount
 		self.resource = math.floor(math.max(self.resource, 0))
-		self:refreshSpawnBlocking()
 	end
 
 	function ZoneCommand:reveal(time)
-		local revtime = 30
+		local revtime = 60
 		if time then
 			revtime = time
 		end
@@ -407,7 +500,27 @@ do
 					sidetxt = "Blue"
 				end
 
-				trigger.action.outText(self.name.." has been captured by "..sidetxt, 15)
+				--trigger.action.outText(self.name.." has been captured by "..sidetxt, 15)
+				
+				local sourcePos = {
+					x = self.zone.point.x,
+					y = 9144,
+					z = self.zone.point.z,
+				}
+
+				if side == 1 then
+					if math.random()>0.5 then
+						TransmissionManager.queueMultiple({'zones.events.capturedbythem.1','zones.names.'..self.name}, TransmissionManager.radios.command, sourcePos)
+					else
+						TransmissionManager.queueMultiple({'zones.names.'..self.name,'zones.events.capturedbythem.2'}, TransmissionManager.radios.command, sourcePos)
+					end
+				elseif side == 2 then
+					if math.random()>0.5 then
+						TransmissionManager.queueMultiple({'zones.events.capturedbyus.1','zones.names.'..self.name}, TransmissionManager.radios.command, sourcePos)
+					else
+						TransmissionManager.queueMultiple({'zones.names.'..self.name, 'zones.events.capturedbyus.2'}, TransmissionManager.radios.command, sourcePos)
+					end
+				end
 			end
 			self:setSide(side)
 			local p = self.upgrades[side][1]
@@ -429,14 +542,6 @@ do
 				self.zone:spawnGroup(product, self.spawnSurface)
 				self.built[product.name] = product
 			end
-		elseif product.type == 'mission' then
-			self:reserveMission(product)
-			timer.scheduleFunction(function (param, tme)
-				param.context:unReserveMission(param.product)
-				if param.context:isMissionValid(param.product) then
-					param.context:activateMission(param.product)
-				end
-			end, {context = self, product = product}, timer.getTime()+math.random(3,10))
 		end
 	end
 	
@@ -550,9 +655,29 @@ do
 					sidetxt = "Blue"
 				end
 
-				trigger.action.outText(sidetxt.." has lost control of "..self.name, 15)
+				--trigger.action.outText(sidetxt.." has lost control of "..self.name, 15)
+				local sourcePos = {
+					x = self.zone.point.x,
+					y = 9144,
+					z = self.zone.point.z,
+				}
+
+				if self.side == 2 then
+					if math.random()>0.5 then
+						TransmissionManager.queueMultiple({'zones.events.lost.1', 'zones.names.'..self.name}, TransmissionManager.radios.command, sourcePos)
+					else
+						TransmissionManager.queueMultiple({'zones.names.'..self.name, 'zones.events.lost.2'}, TransmissionManager.radios.command, sourcePos)
+					end
+				elseif self.side == 1 then
+					if math.random()>0.5 then
+						TransmissionManager.queueMultiple({'zones.events.lostbythem.1', 'zones.names.'..self.name}, TransmissionManager.radios.command, sourcePos)
+					else
+						TransmissionManager.queueMultiple({'zones.names.'..self.name, 'zones.events.lostbythem.2'}, TransmissionManager.radios.command, sourcePos)
+					end
+				end
 
 				self:setSide(0)
+				self.sabotageDebt = 0
 				self.mode = 'normal'
 				self.currentBuild = nil
 				self.currentMissionBuild = nil
@@ -570,8 +695,6 @@ do
 				end
 			end
 			
-			self:verifyBuildValid()
-			self:chooseBuild()
 			self:progressBuild()
 			
 			self.resourceChange = self.resource - initialRes
@@ -586,296 +709,157 @@ do
 		end, {context = self}, timer.getTime()+1)
 	end
 	
-	function ZoneCommand:verifyBuildValid()
-		if self.currentBuild then
-			if self.side == 0 then
-				self.currentBuild = nil 
-				env.info('ZoneCommand:verifyBuildValid - stopping build, zone is neutral')
-			end
-
-			if self.mode == 'export' or self.mode == 'supply' then 
-				if not (self.currentBuild.product.type == ZoneCommand.productTypes.upgrade or 
-					self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_air or 
-					self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_convoy or
-					self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_transfer) then 
-					env.info('ZoneCommand:verifyBuildValid - stopping build, mode is '..self.mode..' but mission is not supply')
-					self.currentBuild = nil 
-				end
-			end
-			
-			if self.currentBuild and (self.currentBuild.product.type == 'defense' or self.currentBuild.product.type == 'mission') then
-				for i,v in ipairs(self.upgrades[self.currentBuild.side]) do
-					for i2,v2 in ipairs(v.products) do
-						if v2.name == self.currentBuild.product.name then
-							local g = Group.getByName(v.name)
-							if not g then g = StaticObject.getByName(v.name) end
-							
-							if not g then 
-								env.info('ZoneCommand:verifyBuildValid - stopping build, required upgrade no longer exists')
-								self.currentBuild = nil 
-								break
-							end
-						end
-					end
-					
-					if not self.currentBuild then
-						break
-					end
-				end
-			end
-		end
-
-		if self.currentMissionBuild then
-			if self.side == 0 then
-				self.currentMissionBuild = nil 
-				env.info('ZoneCommand:verifyBuildValid - stopping mission build, zone is neutral')
-			end
-
-			if (self.mode == 'export' and not self.keepActive) or self.mode == 'supply' then 
-				env.info('ZoneCommand:verifyBuildValid - stopping mission build, mode is '..self.mode..'')
-				self.currentMissionBuild = nil
-			end
-			
-			if self.currentMissionBuild and self.currentMissionBuild.product.type == 'mission' then
-				for i,v in ipairs(self.upgrades[self.currentMissionBuild.side]) do
-					for i2,v2 in ipairs(v.products) do
-						if v2.name == self.currentMissionBuild.product.name then
-							local g = Group.getByName(v.name)
-							if not g then g = StaticObject.getByName(v.name) end
-							
-							if not g then 
-								env.info('ZoneCommand:verifyBuildValid - stopping mission build, required upgrade no longer exists')
-								self.currentMissionBuild = nil 
-								break
-							end
-						end
-					end
-					
-					if not self.currentMissionBuild then
-						break
-					end
-				end
-			end
-		end
-	end
-	
-	function ZoneCommand:chooseBuild()
-		local treshhold = self.spendTreshold
-		--local treshhold = 0
-		if self.side ~= 0 and self.currentBuild == nil then
-			local canAfford = {}
-			for _,v in ipairs(self.upgrades[self.side]) do
-				local u = Group.getByName(v.name)
-				if not u then u = StaticObject.getByName(v.name) end
-				
-				if not u then
-						table.insert(canAfford, {product = v, reason='upgrade'})
-				elseif u ~= nil then
-					for _,v2 in ipairs(v.products) do
-						if v2.type == 'mission'  then 
-							if self.resource > treshhold and
-								(v2.missionType == ZoneCommand.missionTypes.supply_air or 
-								v2.missionType == ZoneCommand.missionTypes.supply_convoy or 
-								v2.missionType == ZoneCommand.missionTypes.supply_transfer) then
-								if self:isMissionValid(v2) and math.random() < ZoneCommand.missionValidChance then
-									table.insert(canAfford, {product = v2, reason='mission'})
-									if v2.bias then
-										for _=1,v2.bias,1 do
-											table.insert(canAfford, {product = v2, reason='mission'})
-										end
-									end
-								end
-							end
-						elseif v2.type=='defense' and self.mode ~='export' and self.mode ~='supply' and v2.cost > 0 then
-							local g = Group.getByName(v2.name)
-							if not g then
-								table.insert(canAfford, {product = v2, reason='defense'})
-							elseif g:getSize() < (g:getInitialSize()*math.random(40,100)/100) then
-								table.insert(canAfford, {product = v2, reason='repair'})
-							end
-						end
-					end
-				end
-			end
-			
-			if #canAfford > 0 then
-				local choice = math.random(1, #canAfford)
-				
-				if canAfford[choice] then
-					local p = canAfford[choice]
-					if p.reason == 'repair' then
-						self:queueBuild(p.product, self.side, true)
-					else
-						self:queueBuild(p.product, self.side)
-					end
-				end
-			end
-		end
-
-		if self.side ~= 0 and self.currentMissionBuild == nil then
-			local canMission = {}
-			for _,v in ipairs(self.upgrades[self.side]) do
-				local u = Group.getByName(v.name)
-				if not u then u = StaticObject.getByName(v.name) end
-				if u ~= nil then
-					for _,v2 in ipairs(v.products) do
-						if v2.type == 'mission' then 
-							if v2.missionType ~= ZoneCommand.missionTypes.supply_air and 
-								v2.missionType ~= ZoneCommand.missionTypes.supply_convoy and 
-								v2.missionType ~= ZoneCommand.missionTypes.supply_transfer then
-								if self:isMissionValid(v2) and math.random() < ZoneCommand.missionValidChance then
-									table.insert(canMission, {product = v2, reason='mission'})
-									if v2.bias then
-										for _=1,v2.bias,1 do
-											table.insert(canMission, {product = v2, reason='mission'})
-										end
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-
-			if #canMission > 0 then
-				local choice = math.random(1, #canMission)
-				
-				if canMission[choice] then
-					local p = canMission[choice]
-					self:queueBuild(p.product, self.side)
-				end
-			end
-		end
-	end
-	
 	function ZoneCommand:progressBuild()
-		if self.currentBuild and self.currentBuild.side ~= self.side then
+		self:progressMainBuild()
+		self:progressMissionBuild()
+	end
+
+	function ZoneCommand:progressMainBuild()
+		if not self.currentBuild then return end
+
+		if self.currentBuild and self.currentBuild.product.side ~= self.side then
 			env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, zone changed owner')
 			self.currentBuild = nil
+			return
 		end
 
-		if self.currentMissionBuild and self.currentMissionBuild.side ~= self.side then
-			env.info('ZoneCommand:progressBuild '..self.name..' - stopping mission build, zone changed owner')
-			self.currentMissionBuild = nil
+		if not self:canBuildProduct(self.currentBuild.product) then 
+			env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, zone lost ability to build current product')
+			self.currentBuild = nil
+			return
 		end
-		
+
 		if self.currentBuild then
-			if self.currentBuild.product.type == 'mission' and not self:isMissionValid(self.currentBuild.product) then
-				env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, mission no longer valid')
-				self.currentBuild = nil
-			else
-				local cost = self.currentBuild.product.cost
-				if self.currentBuild.isRepair then
-					cost = math.floor(self.currentBuild.product.cost/2)
-				end
-				
-				if self.currentBuild.progress < cost then
-					if self.currentBuild.isRepair and not Group.getByName(self.currentBuild.product.name) then
-						env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, group to repair no longer exists')
-						self.currentBuild = nil
-					else
-						if self.currentBuild.isRepair then
-							local gr = Group.getByName(self.currentBuild.product.name)
-							if gr and self.currentBuild.unitcount and gr:getSize() < self.currentBuild.unitcount then
-								env.info('ZoneCommand:progressBuild '..self.name..' - restarting build, group to repair has casualties')
-								self.currentBuild.unitcount = gr:getSize()
-								self:addResource(self.currentBuild.progress)
-								self.currentBuild.progress = 0
-							end
+			local cost = self.currentBuild.product.cost
+			if self.currentBuild.isRepair then
+				cost = math.floor(self.currentBuild.product.cost/2)
+			end
+			
+			if self.currentBuild.progress < cost then
+				if self.currentBuild.isRepair and not Group.getByName(self.currentBuild.product.name) then
+					env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, group to repair no longer exists')
+					self.currentBuild = nil
+				else
+					if self.currentBuild.isRepair then
+						local gr = Group.getByName(self.currentBuild.product.name)
+						if gr and self.currentBuild.unitcount and gr:getSize() < self.currentBuild.unitcount then
+							env.info('ZoneCommand:progressBuild '..self.name..' - restarting build, group to repair has casualties')
+							self.currentBuild.unitcount = gr:getSize()
+							self:addResource(self.currentBuild.progress)
+							self.currentBuild.progress = 0
 						end
+					end
 
-						local step = math.floor(ZoneCommand.buildSpeed * self.boostScale)
-						if self.currentBuild.product.type == ZoneCommand.productTypes.mission then
-							if self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_air or
-								self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_convoy or
-								self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_transfer then
-								step = math.floor(ZoneCommand.supplyBuildSpeed * self.boostScale)
+					local step = math.floor(ZoneCommand.buildSpeed * self.boostScale)
+					if step > self.resource then step = 1 end
+					
+					if step <= self.resource then
+						self:removeResource(step)
 
-								if self.currentBuild.product.missionType == ZoneCommand.missionTypes.supply_transfer then
-									step = math.floor(step*2)
-								end
+						if self.sabotageDebt > 0 then
+							self.sabotageDebt = math.max(self.sabotageDebt - step, 0)
+							env.info('ZoneCommand:progressBuild - '..self.name..' consumed '..step..' resources for sabotage repair, remaining '..self.sabotageDebt)
+						else
+							local actualStep = step
+							if self.currentBuild.product.type == 'mission' then
+								local progress = step*self.missionBuildSpeedReduction
+								actualStep = math.max(1, math.floor(progress))
 							end
-						end
-						
-						if step > self.resource then step = 1 end
-						if step <= self.resource then
-							self:removeResource(step)
-							self.currentBuild.progress = self.currentBuild.progress + step
 
+							self.currentBuild.progress = self.currentBuild.progress + actualStep
+							
 							if self.extraBuildResources > 0 then
 								local extrastep = step
 								if self.extraBuildResources < extrastep then
 									extrastep = self.extraBuildResources
 								end
-
+								
 								self.extraBuildResources = math.max(self.extraBuildResources - extrastep, 0)
-								self.currentBuild.progress = self.currentBuild.progress + extrastep
+
+								local actualExtraStep = extrastep
+								if self.currentBuild.product.type == 'mission' then
+									local progress = extrastep*self.missionBuildSpeedReduction
+									actualExtraStep = math.max(1, math.floor(progress))
+								end
+								self.currentBuild.progress = self.currentBuild.progress + actualExtraStep
 								
 								env.info('ZoneCommand:progressBuild - '..self.name..' consumed '..extrastep..' extra resources, remaining '..self.extraBuildResources)
 							end
 						end
 					end
-				else
-					if self.currentBuild.product.type == 'mission' then
-						if self:isMissionValid(self.currentBuild.product) then
-							self:activateMission(self.currentBuild.product)
-						else
-							self:addResource(self.currentBuild.product.cost)
-						end
-					elseif self.currentBuild.product.type == 'defense' or self.currentBuild.product.type=='upgrade' then
-						if self.currentBuild.isRepair then
-							if Group.getByName(self.currentBuild.product.name) then
-								self.zone:spawnGroup(self.currentBuild.product, self.spawnSurface)
-							end
-						else
+				end
+			else
+				if self.currentBuild.product.type == 'mission' then
+					StrategicAI.pushResource(self.currentBuild.product)
+				elseif self.currentBuild.product.type == 'defense' or self.currentBuild.product.type == 'upgrade' then
+					if self.currentBuild.isRepair then
+						if Group.getByName(self.currentBuild.product.name) then
 							self.zone:spawnGroup(self.currentBuild.product, self.spawnSurface)
 						end
-						
-						self.built[self.currentBuild.product.name] = self.currentBuild.product
-					end
-					
-					self.currentBuild = nil
-				end
-			end
-		end
-
-		if self.currentMissionBuild then
-			if self.currentMissionBuild.product.type == 'mission' and not self:isMissionValid(self.currentMissionBuild.product) then
-				env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, mission no longer valid')
-				self.currentMissionBuild = nil
-			else
-				local cost = self.currentMissionBuild.product.cost
-				
-				if self.currentMissionBuild.progress < cost then
-					local step = math.floor(ZoneCommand.buildSpeed * self.boostScale)
-
-					if step > self.resource then step = 1 end
-
-					local progress = step*self.missionBuildSpeedReduction
-					local reducedCost = math.max(1, math.floor(progress))
-					if reducedCost <= self.resource then
-						self:removeResource(reducedCost)
-						self.currentMissionBuild.progress = self.currentMissionBuild.progress + progress
-					end
-				else
-					if self:isMissionValid(self.currentMissionBuild.product) then
-						self:activateMission(self.currentMissionBuild.product)
 					else
-						self:addResource(self.currentMissionBuild.product.cost)
+						self.zone:spawnGroup(self.currentBuild.product, self.spawnSurface)
 					end
 					
-					self.currentMissionBuild = nil
+					self.built[self.currentBuild.product.name] = self.currentBuild.product
 				end
+
+				self.currentBuild = nil
 			end
 		end
 	end
+
+	function ZoneCommand:progressMissionBuild()
+		if not self.currentMissionBuild then return end
+
+		if self.sabotageDebt > 0 then return end
+
+		if self.currentMissionBuild and self.currentMissionBuild.product.side ~= self.side then
+			env.info('ZoneCommand:progressBuild '..self.name..' - stopping mission build, zone changed owner')
+			self.currentMissionBuild = nil
+			return
+		end
+
+		if not self:canBuildProduct(self.currentMissionBuild.product) then 
+			env.info('ZoneCommand:progressBuild '..self.name..' - stopping build, zone lost ability to build current product')
+			self.currentMissionBuild = nil
+			return
+		end
+
+		local cost = self.currentMissionBuild.product.cost
+			
+		if self.currentMissionBuild.progress < cost then
+			local step = math.floor(ZoneCommand.buildSpeed * self.boostScale)
+
+			if step > self.resource then step = 1 end
+
+			local progress = step*self.missionBuildSpeedReduction
+			local reducedCost = math.max(1, math.floor(progress))
+			if reducedCost <= self.resource and self.sabotageDebt == 0 then
+				self:removeResource(reducedCost)
+				self.currentMissionBuild.progress = self.currentMissionBuild.progress + progress
+			end
+		else
+			StrategicAI.pushResource(self.currentMissionBuild.product)
+			self.currentMissionBuild = nil
+		end
+	end
 	
-	function ZoneCommand:queueBuild(product, side, isRepair, progress)
-		if product.type ~= ZoneCommand.productTypes.mission or 
-			(product.missionType == ZoneCommand.missionTypes.supply_air or
-			product.missionType == ZoneCommand.missionTypes.supply_convoy or
-			product.missionType == ZoneCommand.missionTypes.supply_transfer) then
-				
+	function ZoneCommand:queueBuild(product, isRepair, progress)
+
+		local mainQueueTypes = {
+			[ZoneCommand.productTypes.upgrade] = true,
+			[ZoneCommand.productTypes.defense] = true,
+		}
+		
+		local supplyTypes = {
+			[ZoneCommand.missionTypes.supply_air] = true,
+			[ZoneCommand.missionTypes.supply_convoy] = true,
+			[ZoneCommand.missionTypes.supply_transfer] = true,
+		}
+
+		if not self:canBuildProduct(product) then return false end
+		
+		if mainQueueTypes[product.type] or (product.type==ZoneCommand.productTypes.mission and supplyTypes[product.missionType]) and self.currentBuild==nil then
 			local unitcount = nil
 			if isRepair then
 				local g = Group.getByName(product.name)
@@ -884,956 +868,97 @@ do
 					env.info('ZoneCommand:queueBuild - '..self.name..' '..product.name..' has '..unitcount..' units')
 				end
 			end
+
+			self.currentBuild = { product = product, progress = (progress or 0), isRepair = isRepair, unitcount = unitcount}
+			env.info('ZoneCommand:queueBuild - '..self.name..' starting '..product.name..'('..product.display..') as its build')
+			return true
+		elseif product.type == ZoneCommand.productTypes.mission and not supplyTypes[product.missionType] and self.currentMissionBuild==nil then
+			self.currentMissionBuild = { product = product, progress = (progress or 0)}
+			env.info('ZoneCommand:queueBuild - '..self.name..' starting '..product.name..'('..product.display..') as its mission build')
+			return true
+		end
+	end
+
+	function ZoneCommand:requirementsMet(product)
+		for _,v in ipairs(self.upgrades[self.side]) do
+			local u = Group.getByName(v.name)
+			if not u then u = StaticObject.getByName(v.name) end
 			
-			self.currentBuild = { product = product, progress = (progress or 0), side = side, isRepair = isRepair, unitcount = unitcount}
-			env.info('ZoneCommand:queueBuild - '..self.name..' chose '..product.name..'('..product.display..') as its build')
-		else
-			self.currentMissionBuild = { product = product, progress = (progress or 0), side = side}
-			env.info('ZoneCommand:queueBuild - '..self.name..' chose '..product.name..'('..product.display..') as its mission build')
-		end
-	end
-
-	function ZoneCommand:reserveMission(product)
-		self.reservedMissions[product.name] = product
-	end
-
-	function ZoneCommand:unReserveMission(product)
-		self.reservedMissions[product.name] = nil
-	end
-
-	function ZoneCommand:isMissionValid(product)
-		if Group.getByName(product.name) then return false end
-
-		if self.reservedMissions[product.name] then
-			return false
-		end
-
-		if product.missionType == ZoneCommand.missionTypes.supply_convoy then
-			if self.distToFront == nil then return false end
-
-			for _,tgt in pairs(self.neighbours) do
-				if self:isSupplyMissionValid(product, tgt) then 
-					return true 
+			if not u then
+				if v.name == product.name then
+					return true
 				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.supply_transfer then
-			if self.distToFront == nil then return false end 
-			for _,tgt in pairs(self.neighbours) do
-				if self:isSupplyTransferMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.supply_air then
-			if self.distToFront == nil then return false end
-
-			for _,tgt in pairs(self.neighbours) do
-				if self:isSupplyMissionValid(product, tgt) then 
-					return true 
-				else
-					for _,subtgt in pairs(tgt.neighbours) do
-						if subtgt.name ~= self.name and self:isSupplyMissionValid(product, subtgt) then
-							local dist = mist.utils.get2DDist(self.zone.point, subtgt.zone.point)
-							if dist < 50000 then
-								return true
-							end
-						end
+			elseif u ~= nil then
+				for _,v2 in ipairs(v.products) do
+					if v2.name == product.name then
+						return true
 					end
 				end
 			end
-		elseif product.missionType == ZoneCommand.missionTypes.assault then
-			if self.mode ~= ZoneCommand.modes.normal then return false end
-			for _,tgt in pairs(self.neighbours) do
-				if self:isAssaultMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.cas then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-
-			for _,tgt in pairs(ZoneCommand.getAllZones()) do
-				if self:isCasMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.cas_helo then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-
-			for _,tgt in pairs(self.neighbours) do
-				if self:isCasMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.strike then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-
-			for _,tgt in pairs(ZoneCommand.getAllZones()) do
-				if self:isStrikeMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.sead then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-
-			for _,tgt in pairs(ZoneCommand.getAllZones()) do
-				if self:isSeadMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.patrol then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-
-			for _,tgt in pairs(ZoneCommand.getAllZones()) do
-				if self:isPatrolMissionValid(product, tgt) then 
-					return true 
-				end
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.bai then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-
-			for _,tgt in pairs(DependencyManager.get("GroupMonitor").groups) do
-				if self:isBaiMissionValid(product, tgt) then 
-					return true
-				end	
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.awacs then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-			for _,tgt in pairs(ZoneCommand.getAllZones()) do
-				if self:isAwacsMissionValid(product, tgt) then 
-					return true
-				end	
-			end
-		elseif product.missionType == ZoneCommand.missionTypes.tanker then
-			if self.mode ~= ZoneCommand.modes.normal and not self.keepActive then return false end
-			if not self.distToFront or self.distToFront == 0 then return false end
-			for _,tgt in pairs(ZoneCommand.getAllZones()) do
-				if self:isTankerMissionValid(product, tgt) then 
-					return true
-				end	
-			end
 		end
+
+		return false
 	end
 
-	function ZoneCommand:activateMission(product)
-		if product.missionType == ZoneCommand.missionTypes.supply_convoy then
-			self:activateSupplyConvoyMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.assault then
-			self:activateAssaultMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.supply_air then
-			self:activateAirSupplyMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.supply_transfer then
-			self:activateSupplyTransferMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.cas then
-			self:activateCasMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.cas_helo then
-			self:activateCasMission(product, true)
-		elseif product.missionType == ZoneCommand.missionTypes.strike then
-			self:activateStrikeMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.sead then
-			self:activateSeadMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.patrol then
-			self:activatePatrolMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.bai then
-			self:activateBaiMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.awacs then
-			self:activateAwacsMission(product)
-		elseif product.missionType == ZoneCommand.missionTypes.tanker then
-			self:activateTankerMission(product)
-		end
+	function ZoneCommand:canBuildProduct(product)
+		if product.side ~= self.side then return false end
 
-		env.info('ZoneCommand:activateMission - '..self.name..' activating mission '..product.name..'('..product.display..')')
-	end
-
-	function ZoneCommand:reActivateMission(savedData)
-		local product = self:getProductByName(savedData.productName)
-
-		if product.missionType == ZoneCommand.missionTypes.supply_convoy then
-			self:reActivateSupplyConvoyMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.assault then
-			self:reActivateAssaultMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.supply_air then
-			self:reActivateAirSupplyMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.supply_transfer then
-			self:reActivateSupplyTransferMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.cas then
-			self:reActivateCasMission(product, nil, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.cas_helo then
-			self:reActivateCasMission(product, true, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.strike then
-			self:reActivateStrikeMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.sead then
-			self:reActivateSeadMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.patrol then
-			self:reActivatePatrolMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.bai then
-			self:reActivateBaiMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.awacs then
-			self:reActivateAwacsMission(product, savedData)
-		elseif product.missionType == ZoneCommand.missionTypes.tanker then
-			self:reActivateTankerMission(product, savedData)
-		end
-
-		env.info('ZoneCommand:reActivateMission - '..self.name..' reactivating mission '..product.name..'('..product.display..')')
-	end
-
-	local function getDefaultPos(savedData, isAir)
-		local action = 'Off Road'
-		local speed = 0
-		if isAir then
-			action = 'Turning Point'
-			speed = 250
-		end
-
-		local vars = {
-			groupName = savedData.productName,
-			point = savedData.position,
-			action = 'respawn',
-			heading = savedData.heading,
-			initTasks = false,
-			route = { 
-				[1] = {
-					alt = savedData.position.y,
-					type = 'Turning Point',
-					action = action,
-					alt_type = 'BARO',
-					x = savedData.position.x,
-					y = savedData.position.z,
-					speed = speed
-				}
-			}
-		}
-
-		return vars
-	end
-
-	local function teleportToPos(groupName, pos)
-		if pos.y == nil then
-			pos.y = land.getHeight({ x = pos.x, y = pos.z })
-		end
-
-		local vars = {
-			groupName = groupName,
-			point = pos,
-			action = 'respawn',
-			initTasks = false
-		}
-
-		mist.teleportToPoint(vars)
-	end
-
-	function ZoneCommand:reActivateSupplyConvoyMission(product, savedData)
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		local supplyPoint = trigger.misc.getZone(zone.name..'-sp')
-		if not supplyPoint then
-			supplyPoint = trigger.misc.getZone(zone.name)
-		end
-		if supplyPoint then 
-			mist.teleportToPoint(getDefaultPos(savedData, false))
-			DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-
-			product.lastMission = {zoneName = zone.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.name)
-				TaskExtensions.moveOnRoadToPoint(gr, param.point)
-			end, {name=product.name, point={ x=supplyPoint.point.x, y = supplyPoint.point.z}}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivateAssaultMission(product, savedData)
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		local supplyPoint = trigger.misc.getZone(zone.name..'-sp')
-		if not supplyPoint then
-			supplyPoint = trigger.misc.getZone(zone.name)
-		end
-		if supplyPoint then 
-			mist.teleportToPoint(getDefaultPos(savedData, false))
-			DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-
-			local tgtPoint = trigger.misc.getZone(zone.name)
-
-			if tgtPoint then 
-				product.lastMission = {zoneName = zone.name}
-				timer.scheduleFunction(function(param)
-					local gr = Group.getByName(param.name)
-					TaskExtensions.moveOnRoadToPointAndAssault(gr, param.point, param.targets)
-				end, {name=product.name, point={ x=tgtPoint.point.x, y = tgtPoint.point.z}, targets=zone.built}, timer.getTime()+1)
-			end
-		end
-	end
-	
-	function ZoneCommand:reActivateAirSupplyMission(product, savedData)
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-
-		local supplyPoint = trigger.misc.getZone(zone.name..'-hsp')
-		if not supplyPoint then
-			supplyPoint = trigger.misc.getZone(zone.name)
-		end
-
-		if supplyPoint then 
-			product.lastMission = {zoneName = zone.name}
-			local alt = DependencyManager.get("ConnectionManager"):getHeliAlt(self.name, zone.name)
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.name)
-				TaskExtensions.landAtPoint(gr, param.point, param.alt)
-			end, {name=product.name, point={ x=supplyPoint.point.x, y = supplyPoint.point.z}, alt = alt}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivateSupplyTransferMission(product, savedData)
-		-- not needed
-	end
-	
-	function ZoneCommand:reActivateCasMission(product, isHelo, savedData)
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-
-		if zone then 
-			product.lastMission = {zoneName = zone.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				if param.helo then
-					TaskExtensions.executeHeloCasMission(gr, param.targets, param.prod.expend, param.prod.altitude, {homePos = homePos})
-				else
-					TaskExtensions.executeCasMission(gr, param.targets, param.prod.expend, param.prod.altitude, {homePos = homePos})
-				end
-			end, {prod=product, targets=zone.built, helo = isHelo, homePos = homePos}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivateStrikeMission(product, savedData)
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-
-		if zone then 
-			product.lastMission = {zoneName = zone.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				TaskExtensions.executeStrikeMission(gr, param.targets, param.prod.expend, param.prod.altitude, {homePos = homePos})
-			end, {prod=product, targets=zone.built, homePos = homePos}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivateSeadMission(product, savedData)
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-
-		if zone then 
-			product.lastMission = {zoneName = zone.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				TaskExtensions.executeSeadMission(gr, param.targets, param.prod.expend, param.prod.altitude, {homePos = homePos})
-			end, {prod=product, targets=zone.built, homePos = homePos}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivatePatrolMission(product, savedData)
-
-		local zn1 = ZoneCommand.getZoneByName(savedData.lastMission.zone1name)
-
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zn1, self, savedData)
-
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-
-		if zn1 then 
-			product.lastMission = {zone1name = zn1.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-
-				local point = trigger.misc.getZone(param.zone1.name).point
-
-				TaskExtensions.executePatrolMission(gr, point, param.prod.altitude, param.prod.range, {homePos = param.homePos})
-			end, {prod=product, zone1 = zn1, homePos = homePos}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivateBaiMission(product, savedData)
-		local targets = {}
-		local hasTarget = false
-		for _,tgt in pairs(DependencyManager.get("GroupMonitor").groups) do
-			if self:isBaiMissionValid(product, tgt) then 
-				targets[tgt.product.name] = tgt.product
-				hasTarget = true
-			end	
-		end
-		
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-
-		if hasTarget then 
-			mist.teleportToPoint(getDefaultPos(savedData, true))
-			DependencyManager.get("GroupMonitor"):registerGroup(product, nil, self, savedData)
-
-			product.lastMission = { active = true }
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				TaskExtensions.executeBaiMission(gr, param.targets, param.prod.expend, param.prod.altitude, {homePos = param.homePos})
-			end, {prod=product, targets=targets, homePos = homePos}, timer.getTime()+1)
-		end
-	end
-	
-	function ZoneCommand:reActivateAwacsMission(product, savedData)
-		
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-		DependencyManager.get("GroupMonitor"):registerGroup(product, nil, self, savedData)
-		timer.scheduleFunction(function(param)
-			local gr = Group.getByName(param.prod.name)
-			if gr then
-				local un = gr:getUnit(1)
-				if un then 
-					local callsign = un:getCallsign()
-					RadioFrequencyTracker.registerRadio(param.prod.name, '[AWACS] '..callsign, param.prod.freq..' AM')
-				end
-
-				local point = trigger.misc.getZone(param.target.name).point
-				product.lastMission = { zoneName = param.target.name }
-				TaskExtensions.executeAwacsMission(gr, point, param.prod.altitude, param.prod.freq, {homePos = param.homePos})
-			end
-		end, {prod=product, target=zone, homePos = homePos}, timer.getTime()+1)
-	end
-	
-	function ZoneCommand:reActivateTankerMission(product, savedData)
-
-		local zone = ZoneCommand.getZoneByName(savedData.lastMission.zoneName)
-
-		local homePos = trigger.misc.getZone(savedData.homeName).point
-		mist.teleportToPoint(getDefaultPos(savedData, true))
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zone, self, savedData)
-		
-		timer.scheduleFunction(function(param)
-			local gr = Group.getByName(param.prod.name)
-			if gr then
-				local un = gr:getUnit(1)
-				if un then 
-					local callsign = un:getCallsign()
-					RadioFrequencyTracker.registerRadio(param.prod.name, '[Tanker('..param.prod.variant..')] '..callsign, param.prod.freq..' AM | TCN '..param.prod.tacan..'X')
-				end
-
-				local point = trigger.misc.getZone(param.target.name).point
-				product.lastMission = { zoneName = param.target.name }
-				TaskExtensions.executeTankerMission(gr, point, param.prod.altitude, param.prod.freq, param.prod.tacan, {homePos = param.homePos})
-			end
-		end, {prod=product, target=zone, homePos = homePos}, timer.getTime()+1)
-	end
-
-	function ZoneCommand:isBaiMissionValid(product, tgtgroup)
-		if product.side == tgtgroup.product.side then return false end
-		if tgtgroup.product.type ~= ZoneCommand.productTypes.mission then return false end
-		if tgtgroup.product.missionType == ZoneCommand.missionTypes.assault then return true end
-		if tgtgroup.product.missionType == ZoneCommand.missionTypes.supply_convoy then return true end
-	end
-
-	function ZoneCommand:activateBaiMission(product)
-		--{name = product.name, lastStateTime = timer.getAbsTime(), product = product, target = target}
-		local targets = {}
-		local hasTarget = false
-		for _,tgt in pairs(DependencyManager.get("GroupMonitor").groups) do
-			if self:isBaiMissionValid(product, tgt) then 
-				targets[tgt.product.name] = tgt.product
-				hasTarget = true
-			end	
-		end
-
-		if hasTarget then 
-			local og = Utils.getOriginalGroup(product.name)
-			if og then
-				teleportToPos(product.name, {x=og.x, z=og.y})
-				env.info("ZoneCommand - activateBaiMission teleporting to OG pos")
+		if product.type == ZoneCommand.productTypes.upgrade then
+			if self.built[product.name] == nil then return self:requirementsMet(product) end
+		elseif product.type == ZoneCommand.productTypes.defense then
+			if self.built[product.name] == nil then
+				return self:requirementsMet(product)
 			else
-				mist.respawnGroup(product.name, true)
-				env.info("ZoneCommand - activateBaiMission fallback to respawnGroup")
-			end
-
-			DependencyManager.get("GroupMonitor"):registerGroup(product, nil, self)
-
-			product.lastMission = { active = true }
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				TaskExtensions.executeBaiMission(gr, param.targets, param.prod.expend, param.prod.altitude)
-			end, {prod=product, targets=targets}, timer.getTime()+1)
-
-			env.info("ZoneCommand - "..product.name.." targeting convoys")
-		end
-	end
-
-	local function prioritizeSupplyTargets(a,b)
-		--if a:criticalOnSupplies() and not b:criticalOnSupplies() then return true end
-		--if b:criticalOnSupplies() and not a:criticalOnSupplies() then return false end
-
-		if a.distToFront~=nil and b.distToFront == nil then
-			return true
-		elseif a.distToFront == nil and b.distToFront ~= nil then
-			return false
-		elseif a.distToFront == b.distToFront then
-			return a.resource < b.resource
-		else
-			return a.distToFront<b.distToFront
-		end
-	end
-
-	function ZoneCommand:activateSupplyTransferMission(product)
-		local tgtzones = {}
-		for _,v in pairs(self.neighbours) do
-			if (v.side == 0 or v.side==product.side) then
-				table.insert(tgtzones, v)
-			end
-		end
-		
-		if #tgtzones == 0 then 
-			env.info('ZoneCommand:activateSupplyTransferMission - '..self.name..' no valid tgtzones')
-			return 
-		end
-
-		table.sort(tgtzones, prioritizeSupplyTargets)
-
-		for i,v in ipairs(tgtzones) do
-			if self:isSupplyTransferMissionValid(product, v) then
-				-- virtual resourse transfer to save some performance
-				v:addResource(product.cost)
-				env.info('ZoneCommand:activateSupplyTransferMission - '..self.name..' transfered '..product.cost..' to '..v.name)
-				break
-			end
-		end
-	end
-
-	function ZoneCommand:activateAirSupplyMission(product) 
-		local tgtzones = {}
-		for _,v in pairs(self.neighbours) do
-			if (v.side == 0 or v.side==product.side) then
-				table.insert(tgtzones, v)
-
-				for _,v2 in pairs(v.neighbours) do
-					if v2.name~=self.name and (v2.side == 0 or v2.side==product.side) then
-						local dist = mist.utils.get2DDist(self.zone.point, v2.zone.point)
-						if dist < 50000 then
-							table.insert(tgtzones, v2)
-						end
-					end
+				local g = Group.getByName(product.name)
+				if g and g:isExist() and g:getSize() < g:getInitialSize() then
+					return self:requirementsMet(product)
 				end
 			end
-		end
-		
-		if #tgtzones == 0 then 
-			env.info('ZoneCommand:activateAirSupplyMission - '..self.name..' no valid tgtzones')
-			return 
-		end
-
-		table.sort(tgtzones, prioritizeSupplyTargets)
-		local viablezones = {}
-		for _,v in ipairs(tgtzones) do
-			viablezones[v.name] = v
-		end
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if prioZone.side == 0 and viablezones[prioZone.name] and self:isSupplyMissionValid(product, prioZone) then
-				tgtzones = { prioZone }
+		elseif product.type == ZoneCommand.productTypes.mission then
+			if not StrategicAI.isProductBuilt(product) then
+				return self:requirementsMet(product)
 			end
 		end
 
-		for i,v in ipairs(tgtzones) do
-			if self:isSupplyMissionValid(product, v) then
-
-				local og = Utils.getOriginalGroup(product.name)
-				if og then
-					teleportToPos(product.name, {x=og.x, z=og.y})
-					env.info("ZoneCommand - activateAirSupplyMission teleporting to OG pos")
-				else
-					mist.respawnGroup(product.name, true)
-					env.info("ZoneCommand - activateAirSupplyMission fallback to respawnGroup")
-				end
-
-				DependencyManager.get("GroupMonitor"):registerGroup(product, v, self)
-
-				local supplyPoint = trigger.misc.getZone(v.name..'-hsp')
-				if not supplyPoint then
-					supplyPoint = trigger.misc.getZone(v.name)
-				end
-
-				if supplyPoint then 
-					product.lastMission = {zoneName = v.name}
-
-					local alt = DependencyManager.get("ConnectionManager"):getHeliAlt(self.name, v.name)
-					timer.scheduleFunction(function(param)
-						local gr = Group.getByName(param.name)
-						TaskExtensions.landAtPoint(gr, param.point, param.alt )
-					end, {name=product.name, point={ x=supplyPoint.point.x, y = supplyPoint.point.z}, alt = alt}, timer.getTime()+1)
-
-					env.info("ZoneCommand - "..product.name.." targeting "..v.name)
-				end
-
-				break
-			end
-		end
+		return false
 	end
 
-	function ZoneCommand:isSupplyTransferMissionValid(product, target)
-		if target.side == 0 then
-			return false
-		end
-
-		if target.side == self.side then 
-			if self.distToFront <= 1 or target.distToFront <= 1 then return false end -- skip transfer missions if close to front
-
-			if not target.distToFront or not self.distToFront then
-				return false
-			end
-			
-			if target:needsSupplies(product.cost) and target.distToFront < self.distToFront then
-				return true
-			end
-			
-			if target:criticalOnSupplies() and self.distToFront<=target.distToFront then
-				return true
-			end
-
-			if target:criticalOnSupplies() and target.mode == 'normal' then 
-				return true
-			end
-		end
+	function ZoneCommand:canBuild()
+		if not self.currentBuild then return true end
 	end
 
-	function ZoneCommand:isSupplyMissionValid(product, target)
-		if product.missionType == ZoneCommand.missionTypes.supply_convoy then
-			if DependencyManager.get("ConnectionManager"):isRoadBlocked(self.name, target.name) then
-				return false
-			end
-		end
-		
-		if not self.distToFront then return false end
-		if not target.distToFront then return false end
-		
-		if target.side == 0 then
-			return true
-		end
+	function ZoneCommand:canMissionBuild()
+		if not self.keepActive and self.mode ~= 'normal' then return false end
+		if self.currentMissionBuild then return false end
 
-		if target.side == self.side then 
-			if self.distToFront > 1 and target.distToFront > 1 then return false end -- skip regular missions if not close to front
-
-			if self.mode == 'normal' and self.distToFront == 0  and target.distToFront == 0 then
-				return target:needsSupplies(product.cost*0.5)
-			end
-			
-			if target:needsSupplies(product.cost*0.5) and target.distToFront < self.distToFront then
-				return true
-			elseif target:criticalOnSupplies() and self.distToFront>=target.distToFront then
-				return true
-			end
-
-			if target.mode == 'normal' and target:needsSupplies(product.cost*0.5) then 
-				return true
-			end
-		end
-	end
-
-	function ZoneCommand:activateSupplyConvoyMission(product)
-		local tgtzones = {}
-		for _,v in pairs(self.neighbours) do
-			if (v.side == 0 or v.side==product.side) then
-				table.insert(tgtzones, v)
-			end
-		end
-		
-		if #tgtzones == 0 then 
-			env.info('ZoneCommand:activateSupplyConvoyMission - '..self.name..' no valid tgtzones')
-			return 
-		end
-
-		table.sort(tgtzones, prioritizeSupplyTargets)
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if prioZone.side == 0 and self.neighbours[prioZone.name] and self:isSupplyMissionValid(product, prioZone) then
-				tgtzones = { prioZone }
-			end
-		end
-
-		for i,v in ipairs(tgtzones) do
-			if self:isSupplyMissionValid(product, v) then
-
-				local supplyPoint = trigger.misc.getZone(v.name..'-sp')
-				if not supplyPoint then
-					supplyPoint = trigger.misc.getZone(v.name)
-				end
-				
-				if supplyPoint then 
-
-					local og = Utils.getOriginalGroup(product.name)
-					if og then
-						teleportToPos(product.name, {x=og.x, z=og.y})
-						env.info("ZoneCommand - activateSupplyConvoyMission teleporting to OG pos")
-					else
-						mist.respawnGroup(product.name, true)
-						env.info("ZoneCommand - activateSupplyConvoyMission fallback to respawnGroup")
-					end
-
-					DependencyManager.get("GroupMonitor"):registerGroup(product, v, self)
-
-					product.lastMission = {zoneName = v.name}
-					timer.scheduleFunction(function(param)
-						local gr = Group.getByName(param.name)
-						TaskExtensions.moveOnRoadToPoint(gr, param.point)
-					end, {name=product.name, point={ x=supplyPoint.point.x, y = supplyPoint.point.z}}, timer.getTime()+1)
-					
-					env.info("ZoneCommand - "..product.name.." targeting "..v.name)
-				end
-
-				break
-			end
-		end
-	end
-
-	function ZoneCommand:isAssaultMissionValid(product, target)
-
-		if product.missionType == ZoneCommand.missionTypes.assault then
-			if DependencyManager.get("ConnectionManager"):isRoadBlocked(self.name, target.name) then
-				return false
-			end
-		end
-
-		if target.side ~= product.side and target.side ~= 0 then
-			return true
-		end
-	end
-
-	function ZoneCommand:activateAssaultMission(product)
-		local tgtzones = {}
-		for _,v in pairs(self.neighbours) do
-			table.insert(tgtzones, {zone = v, rank = math.random()})
-		end
-
-		table.sort(tgtzones, function(a,b) return a.rank < b.rank end)
-
-		local sorted = {}
-		for i,v in ipairs(tgtzones) do
-			table.insert(sorted, v.zone)
-		end
-		tgtzones = sorted
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if self.neighbours[prioZone.name] and self:isAssaultMissionValid(product, prioZone) then
-				tgtzones = { prioZone }
-			end
-		end
-
-		for i,v in ipairs(tgtzones) do
-			if self:isAssaultMissionValid(product, v) then
-
-				local og = Utils.getOriginalGroup(product.name)
-				if og then
-					teleportToPos(product.name, {x=og.x, z=og.y})
-					env.info("ZoneCommand - activateAssaultMission teleporting to OG pos")
-				else
-					mist.respawnGroup(product.name, true)
-					env.info("ZoneCommand - activateAssaultMission fallback to respawnGroup")
-				end
-
-				DependencyManager.get("GroupMonitor"):registerGroup(product, v, self)
-
-				local tgtPoint = trigger.misc.getZone(v.name)
-
-				if tgtPoint then 
-					product.lastMission = {zoneName = v.name}
-					timer.scheduleFunction(function(param)
-						local gr = Group.getByName(param.name)
-						TaskExtensions.moveOnRoadToPointAndAssault(gr, param.point, param.targets)
-					end, {name=product.name, point={ x=tgtPoint.point.x, y = tgtPoint.point.z}, targets=v.built}, timer.getTime()+1)
-
-					env.info("ZoneCommand - "..product.name.." targeting "..v.name)
-				end
-
-				break
-			end
-		end
-	end
-	
-	function ZoneCommand:isAwacsMissionValid(product, target)
-		if target.side ~= product.side then return false end
-		if target.name == self.name then return false end
-		if not target.distToFront or target.distToFront ~= 4 then return false end
-		
 		return true
 	end
 
-	function ZoneCommand:activateAwacsMission(product)
-		local tgtzones = {}
-		for _,v in pairs(ZoneCommand.getAllZones()) do
-			if self:isAwacsMissionValid(product, v) then
-				table.insert(tgtzones, v)
-			end
-		end
-
-		local choice1 = math.random(1,#tgtzones)
-		local zn = tgtzones[choice1]
-
-		local og = Utils.getOriginalGroup(product.name)
-		if og then
-			teleportToPos(product.name, {x=og.x, z=og.y})
-			env.info("ZoneCommand - activateAwacsMission teleporting to OG pos")
-		else
-			mist.respawnGroup(product.name, true)
-			env.info("ZoneCommand - activateAwacsMission fallback to respawnGroup")
-		end
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zn, self)
-
-		timer.scheduleFunction(function(param)
-			local gr = Group.getByName(param.prod.name)
-			if gr then
-				local un = gr:getUnit(1)
-				if un then 
-					local callsign = un:getCallsign()
-					RadioFrequencyTracker.registerRadio(param.prod.name, '[AWACS] '..callsign, param.prod.freq..' AM')
-				end
-
-				local point = trigger.misc.getZone(param.target.name).point
-				product.lastMission = { zoneName = param.target.name }
-				TaskExtensions.executeAwacsMission(gr, point, param.prod.altitude, param.prod.freq)
-				
-			end
-		end, {prod=product, target=zn}, timer.getTime()+1)
-
-		env.info("ZoneCommand - "..product.name.." targeting "..zn.name)
+	function ZoneCommand:isNeighbour(zone)
+		return self.neighbours[zone.name] ~= nil
 	end
 
-	function ZoneCommand:isTankerMissionValid(product, target)
-		if target.side ~= product.side then return false end
-		if target.name == self.name then return false end
-		if not target.distToFront or target.distToFront ~= 4 then return false end
-		
-		return true
-	end
-
-	function ZoneCommand:activateTankerMission(product)
-
-		local tgtzones = {}
-		for _,v in pairs(ZoneCommand.getAllZones()) do
-			if self:isTankerMissionValid(product, v) then
-				table.insert(tgtzones, v)
-			end
-		end
-
-		local choice1 = math.random(1,#tgtzones)
-		local zn = tgtzones[choice1]
-		table.remove(tgtzones, choice1)
-
-		local og = Utils.getOriginalGroup(product.name)
-		if og then
-			teleportToPos(product.name, {x=og.x, z=og.y})
-			env.info("ZoneCommand - activateTankerMission teleporting to OG pos")
-		else
-			mist.respawnGroup(product.name, true)
-			env.info("ZoneCommand - activateTankerMission fallback to respawnGroup")
-		end
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zn, self)
-
-		timer.scheduleFunction(function(param)
-			local gr = Group.getByName(param.prod.name)
-			if gr then
-				local un = gr:getUnit(1)
-				if un then 
-					local callsign = un:getCallsign()
-					RadioFrequencyTracker.registerRadio(param.prod.name, '[Tanker('..param.prod.variant..')] '..callsign, param.prod.freq..' AM | TCN '..param.prod.tacan..'X')
-				end
-
-				local point = trigger.misc.getZone(param.target.name).point
-				product.lastMission = { zoneName = param.target.name }
-				TaskExtensions.executeTankerMission(gr, point, param.prod.altitude, param.prod.freq, param.prod.tacan)
-			end
-		end, {prod=product, target=zn}, timer.getTime()+1)
-		
-		env.info("ZoneCommand - "..product.name.." targeting "..zn.name)
-	end
-
-	function ZoneCommand:isPatrolMissionValid(product, target)
-		--if target.side ~= product.side then return false end
-		if target.name == self.name then return false end
-		if not target.distToFront or target.distToFront > 1 then return false end
-		if target.side ~= product.side and target.side ~= 0 then return false end
-		local dist = mist.utils.get2DDist(self.zone.point, target.zone.point)
-		if dist > 150000 then return false end
-		
-		return true
-	end
-
-	function ZoneCommand:activatePatrolMission(product)
-		local tgtzones = {}
-		for _,v in pairs(ZoneCommand.getAllZones()) do
-			if self:isPatrolMissionValid(product, v) then
-				table.insert(tgtzones, v)
-			end
-		end
-
-		local choice1 = math.random(1,#tgtzones)
-		local zn1 = tgtzones[choice1]
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if self:isPatrolMissionValid(product, prioZone) then
-				zn1 = prioZone
-			end
-		end
-
-		local og = Utils.getOriginalGroup(product.name)
-		if og then
-			teleportToPos(product.name, {x=og.x, z=og.y})
-			env.info("ZoneCommand - activatePatrolMission teleporting to OG pos")
-		else
-			mist.respawnGroup(product.name, true)
-			env.info("ZoneCommand - activatePatrolMission fallback to respawnGroup")
-		end
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, zn1, self)
-
-		if zn1 then 
-			product.lastMission = {zone1name = zn1.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-
-				local point = trigger.misc.getZone(param.zone1.name).point
-
-				TaskExtensions.executePatrolMission(gr, point, param.prod.altitude, param.prod.range)
-			end, {prod=product, zone1 = zn1}, timer.getTime()+1)
-
-			env.info("ZoneCommand - "..product.name.." targeting "..zn1.name)
-		end
-	end
-
-	function ZoneCommand:isSeadMissionValid(product, target)
-		if target.side == 0 then return false end
-		if not target.distToFront or target.distToFront > 1 then return false end
-		
-		--if MissionTargetRegistry.isZoneTargeted(target.name) then return false end
-
-		return target:hasEnemySAMRadar(product)
-	end
-
-	function ZoneCommand:hasEnemySAMRadar(product)
-		if product.side == 1 then
+	function ZoneCommand:hasEnemySAMRadar(myside)
+		if myside == 1 then
 			return self:hasSAMRadarOnSide(2)
-		elseif product.side == 2 then
+		elseif myside == 2 then
 			return self:hasSAMRadarOnSide(1)
+		end
+	end
+
+	function ZoneCommand:hasEnemyDefense(myside)
+		for i,v in pairs(self.built) do
+			if v.type == ZoneCommand.productTypes.defense and v.side ~= myside then 
+				return true
+			end
+		end
+	end
+
+	function ZoneCommand:hasEnemyStructure(myside)
+		for i,v in pairs(self.built) do
+			if v.type == ZoneCommand.productTypes.upgrade and v.side ~= myside then 
+				return true
+			end
 		end
 	end
 
@@ -1974,168 +1099,6 @@ do
 
 		return count
 	end
-
-	function ZoneCommand:activateSeadMission(product)
-		local tgtzones = {}
-		for _,v in pairs(ZoneCommand.getAllZones()) do
-			if self:isSeadMissionValid(product, v) then
-				table.insert(tgtzones, v)
-			end
-		end
-		
-		local choice = math.random(1,#tgtzones)
-		local target = tgtzones[choice]
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if self:isSeadMissionValid(product, prioZone) then
-				target = prioZone
-			end
-		end
-
-		local og = Utils.getOriginalGroup(product.name)
-		if og then
-			teleportToPos(product.name, {x=og.x, z=og.y})
-			env.info("ZoneCommand - activateSeadMission teleporting to OG pos")
-		else
-			mist.respawnGroup(product.name, true)
-			env.info("ZoneCommand - activateSeadMission fallback to respawnGroup")
-		end
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, target, self)
-
-		if target then 
-			product.lastMission = {zoneName = target.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				TaskExtensions.executeSeadMission(gr, param.targets, param.prod.expend, param.prod.altitude)
-			end, {prod=product, targets=target.built}, timer.getTime()+1)
-			
-			env.info("ZoneCommand - "..product.name.." targeting "..target.name)
-		end
-	end
-
-	function ZoneCommand:isStrikeMissionValid(product, target)
-		if target.side == 0 then return false end
-		if target.side == product.side then return false end
-		if not target.distToFront or target.distToFront > 0 then return false end
-
-		if target:hasEnemySAMRadar(product) then return false end
-
-		--if MissionTargetRegistry.isZoneTargeted(target.name) then return false end
-
-		for i,v in pairs(target.built) do
-			if v.type == ZoneCommand.productTypes.upgrade and v.side ~= product.side then 
-				return true
-			end
-		end
-	end
-
-	function ZoneCommand:activateStrikeMission(product)
-		local tgtzones = {}
-		for _,v in pairs(ZoneCommand.getAllZones()) do
-			if self:isStrikeMissionValid(product, v) then
-				table.insert(tgtzones, v)
-			end
-		end
-		
-		local choice = math.random(1,#tgtzones)
-		local target = tgtzones[choice]
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if self:isStrikeMissionValid(product, prioZone) then
-				target = prioZone
-			end
-		end
-
-		local og = Utils.getOriginalGroup(product.name)
-		if og then
-			teleportToPos(product.name, {x=og.x, z=og.y})
-			env.info("ZoneCommand - activateStrikeMission teleporting to OG pos")
-		else
-			mist.respawnGroup(product.name, true)
-			env.info("ZoneCommand - activateStrikeMission fallback to respawnGroup")
-		end
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, target, self)
-
-		if target then 
-			product.lastMission = {zoneName = target.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				TaskExtensions.executeStrikeMission(gr, param.targets, param.prod.expend, param.prod.altitude)
-			end, {prod=product, targets=target.built}, timer.getTime()+1)
-			
-			env.info("ZoneCommand - "..product.name.." targeting "..target.name)
-		end
-	end
-
-	function ZoneCommand:isCasMissionValid(product, target)
-		if target.side == product.side then return false end
-		if not target.distToFront or target.distToFront > 0 then return false end
-
-		if target:hasEnemySAMRadar(product) then return false end
-
-		--if MissionTargetRegistry.isZoneTargeted(target.name) then return false end
-		
-		for i,v in pairs(target.built) do
-			if v.type == ZoneCommand.productTypes.defense and v.side ~= product.side then 
-				return true
-			end
-		end
-	end
-
-	function ZoneCommand:activateCasMission(product, ishelo)
-		local viablezones = {}
-		if ishelo then
-			viablezones = self.neighbours
-		else
-			viablezones = ZoneCommand.getAllZones()
-		end
-
-		local tgtzones = {}
-		for _,v in pairs(viablezones) do
-			if self:isCasMissionValid(product, v) then
-				table.insert(tgtzones, v)
-			end
-		end
-		
-		local choice = math.random(1,#tgtzones)
-		local target = tgtzones[choice]
-
-		if BattlefieldManager and BattlefieldManager.priorityZones[self.side] then
-			local prioZone = BattlefieldManager.priorityZones[self.side]
-			if viablezones[prioZone.name] and self:isCasMissionValid(product, prioZone) then
-				target = prioZone
-			end
-		end
-
-		local og = Utils.getOriginalGroup(product.name)
-		if og then
-			teleportToPos(product.name, {x=og.x, z=og.y})
-			env.info("ZoneCommand - activateCasMission teleporting to OG pos")
-		else
-			mist.respawnGroup(product.name, true)
-			env.info("ZoneCommand - activateCasMission fallback to respawnGroup")
-		end
-
-		DependencyManager.get("GroupMonitor"):registerGroup(product, target, self)
-
-		if target then 
-			product.lastMission = {zoneName = target.name}
-			timer.scheduleFunction(function(param)
-				local gr = Group.getByName(param.prod.name)
-				if param.helo then
-					TaskExtensions.executeHeloCasMission(gr, param.targets, param.prod.expend, param.prod.altitude)
-				else
-					TaskExtensions.executeCasMission(gr, param.targets, param.prod.expend, param.prod.altitude)
-				end
-			end, {prod=product, targets=target.built, helo = ishelo}, timer.getTime()+1)
-
-			env.info("ZoneCommand - "..product.name.." targeting "..target.name)
-		end
-	end
 	
 	function ZoneCommand:defineUpgrades(upgrades)
 		self.upgrades = upgrades
@@ -2143,14 +1106,22 @@ do
 		for side,sd in ipairs(self.upgrades) do
 			for _,v in ipairs(sd) do
 				v.side = side
+				v.owner = self
 				
-				local cat = TemplateDB.getData(v.template)
+				local cat = nil
+				if v.template then
+					cat = TemplateDB.getData(v.template)
+				elseif v.templates then
+					cat = TemplateDB.getData(v.templates[1])
+				end
+
 				if cat.dataCategory == TemplateDB.type.static then
 					ZoneCommand.staticRegistry[v.name] = true
 				end
 				
 				for _,v2 in ipairs(v.products) do
 					v2.side = side
+					v2.owner = self
 
 					if v2.type == "mission" then
 						local gr = Group.getByName(v2.name)
@@ -2166,6 +1137,20 @@ do
 				end
 			end
 		end
+	end
+
+	function ZoneCommand:getAllProducts()
+		local flatList = {}
+		for i,v in ipairs(self.upgrades) do
+			for i2,v2 in ipairs(v) do
+				flatList[v2.name] = v2
+				for i3,v3 in ipairs(v2.products) do
+					flatList[v3.name] = v3
+				end
+			end
+		end
+
+		return flatList
 	end
 	
 	function ZoneCommand:getProductByName(name)

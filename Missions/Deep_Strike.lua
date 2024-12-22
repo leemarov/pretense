@@ -9,6 +9,10 @@ do
         return 'Deep Strike'
     end
 
+    function Deep_Strike:createObjective()
+        env.info("ERROR - Can't create Deep_Strike on demand")
+    end
+
     function Deep_Strike:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
@@ -20,11 +24,19 @@ do
             local chozenTarget = tgt.data
             local zn = tgt.zone
 
+            local hit = ObjHitStructure:new()
+            hit:initialize(self, {
+                target = chozenTarget,
+                tgtzone = zn,
+                hit = false
+            })
+
+            table.insert(self.objectives, hit)
+
             local kill = ObjDestroyStructure:new()
             kill:initialize(self, {
                 target = chozenTarget,
-                tgtzone = zn,
-                killed = false
+                tgtzone = zn
             })
 
             table.insert(self.objectives, kill)

@@ -46,7 +46,8 @@ do
         csar = 'csar',                  -- extract specific pilot to friendly zone, track friendly pilots ejected
         recon = 'recon',                -- conduct recon
         extraction = 'extraction',  -- extract a deployed squad to friendly zone, generate mission if squad has extractionReady state
-        deploy_squad = 'deploy_squad',  -- deploy squad to zone
+        deploy_squad = 'deploy_squad',  -- deploy squad to zone,
+        salvage = 'salvage',  -- recover crate to zone,
     }
 
     Mission.completion_type = {
@@ -54,7 +55,55 @@ do
         all = 'all'
     }
 
-    function Mission:new(id, type)
+    function Mission.getType(misType)
+        if misType == Mission.types.cap_easy then
+            return CAP_Easy
+        elseif misType == Mission.types.cap_medium then
+            return CAP_Medium
+        elseif misType == Mission.types.cas_easy then
+            return CAS_Easy
+        elseif misType == Mission.types.cas_medium then
+            return CAS_Medium
+        elseif misType == Mission.types.cas_hard then
+            return CAS_Hard
+        elseif misType == Mission.types.sead then
+            return SEAD
+        elseif misType == Mission.types.supply_easy then
+            return Supply_Easy
+        elseif misType == Mission.types.supply_hard then
+            return Supply_Hard
+        elseif misType == Mission.types.strike_veryeasy then
+            return Strike_VeryEasy
+        elseif misType == Mission.types.strike_easy then
+            return Strike_Easy
+        elseif misType == Mission.types.strike_medium then
+            return Strike_Medium
+        elseif misType == Mission.types.strike_hard then
+            return Strike_Hard
+        elseif misType == Mission.types.deep_strike then
+            return Deep_Strike
+        elseif misType == Mission.types.dead then
+            return DEAD
+        elseif misType == Mission.types.escort then
+            return Escort
+        elseif misType == Mission.types.recon then
+            return Recon
+        elseif misType == Mission.types.bai then
+            return BAI
+        elseif misType == Mission.types.anti_runway then
+            return Anti_Runway
+        elseif misType == Mission.types.csar then
+            return CSAR
+        elseif misType == Mission.types.extraction then
+            return Extraction
+        elseif misType == Mission.types.deploy_squad then
+            return DeploySquad
+        elseif misType == Mission.types.salvage then
+            return Salvage
+        end
+    end
+
+    function Mission:new(id, type, target)
         local expire = math.random(60*15, 60*30)
 
 		local obj = {
@@ -70,7 +119,8 @@ do
             completionType = Mission.completion_type.any,
             rewards = {},
             players = {},
-            info = {}
+            info = {},
+            target = target
         }
 
 		setmetatable(obj, self)
@@ -78,7 +128,13 @@ do
 		
         if obj.getExpireTime then obj.expireTime = obj:getExpireTime() end
         if obj.getMissionName then obj.name = obj:getMissionName() end
-        if obj.generateObjectives then obj:generateObjectives() end
+
+        if obj.target and obj.createObjective then 
+            obj:createObjective()
+        elseif obj.generateObjectives then 
+            obj:generateObjectives() 
+        end
+
         if obj.generateRewards then obj:generateRewards() end
 
 		return obj
@@ -266,6 +322,62 @@ do
         end
     end
 
+    function Mission:tallyHit(hit)
+        for _,obj in ipairs(self.objectives) do
+            if not obj.isComplete and not obj.isFailed then
+                if obj.type == ObjHitStructure:getType() then
+                    if obj.param.target.name == hit:getName() then
+                        obj.param.hit = true
+                    end
+                elseif obj.type == ObjDestroyUnitsWithAttribute:getType() then
+                    for _,a in ipairs(obj.param.attr) do
+                        if hit:hasAttribute(a) then
+                            obj.param.hits = obj.param.hits + 1
+                            break
+                        elseif a == 'Buildings' and ZoneCommand and ZoneCommand.staticRegistry[hit:getName()] then
+                            obj.param.hits = obj.param.hits + 1
+                            break
+                        end
+                    end
+                elseif obj.type == ObjDestroyUnitsWithAttributeAtZone:getType() then
+                    local zn = obj.param.tgtzone
+                    if zn then
+                        local validzone = false
+                        if Utils.isInZone(hit, zn.name) then
+                            validzone = true
+                        else
+                            for nm,_ in pairs(zn.built) do
+                                local gr = Group.getByName(nm)
+                                if gr then
+                                    for _,un in ipairs(gr:getUnits()) do
+                                        if un:getID() == hit:getID() then
+                                            validzone = true
+                                            break
+                                        end
+                                    end
+                                end
+
+                                if validzone then break end
+                            end
+                        end
+                        
+                        if validzone then
+                            for _,a in ipairs(obj.param.attr) do
+                                if hit:hasAttribute(a) then
+                                    obj.param.hits = obj.param.hits + 1
+                                    break
+                                elseif a == 'Buildings' and ZoneCommand and ZoneCommand.staticRegistry[hit:getName()] then
+                                    obj.param.hits = obj.param.hits + 1
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
     function Mission:tallyKill(kill)
         for _,obj in ipairs(self.objectives) do
             if not obj.isComplete and not obj.isFailed then
@@ -401,6 +513,18 @@ do
                 if obj.type == ObjReconZone:getType() then
                     if obj.param.target.name == targetzone then
                         obj.param.reconData = targetzone
+                    end
+                end
+            end
+        end
+    end
+    
+    function Mission:tallyUnpackCrate(player, zonename, cargo)
+        for _,obj in ipairs(self.objectives) do
+            if not obj.isComplete and not obj.isFailed then
+                if obj.type == ObjRecoverCrate:getType() then
+                    if cargo.name == obj.param.target.data.name then
+                        obj.param.unpackedAt = zonename
                     end
                 end
             end

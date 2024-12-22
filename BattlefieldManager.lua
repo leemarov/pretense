@@ -6,16 +6,6 @@ do
 	BattlefieldManager.boostScale = {[0] = 1.0, [1]=1.0, [2]=1.0}
 	BattlefieldManager.noRedZones = false
 	BattlefieldManager.noBlueZones = false
-
-	BattlefieldManager.priorityZones = {
-		[1] = nil,
-		[2] = nil
-	}
-
-	BattlefieldManager.overridePriorityZones = {
-		[1] = nil,
-		[2] = nil
-	}
 	
 	function BattlefieldManager:new()
 		local obj = {}
@@ -60,7 +50,7 @@ do
 			for name,zone in pairs(zones) do
 				if zone.distToFront == 0 then
 					for nName, nZone in pairs(zone.neighbours) do
-						if nZone.distToFrount == nil then
+						if nZone.distToFront == nil then
 							table.insert(torank, nZone)
 						end
 					end
@@ -148,85 +138,6 @@ do
 		end, {context = self}, timer.getTime()+1)
 
 		timer.scheduleFunction(function(param, time)
-			local self = param.context
-			
-			local zones = ZoneCommand.getAllZones()
-			
-			local frontLineRed = {}
-			local frontLineBlue = {}
-			for name, zone in pairs(zones) do
-				if zone.distToFront == 0 then
-					if zone.side == 1 then
-						table.insert(frontLineRed, zone)
-					elseif zone.side == 2 then
-						table.insert(frontLineBlue, zone)
-					else
-						table.insert(frontLineRed, zone)
-						table.insert(frontLineBlue, zone)
-					end
-				end
-			end
-
-			if BattlefieldManager.overridePriorityZones[1] and BattlefieldManager.overridePriorityZones[1].ticks > 0 then
-				BattlefieldManager.priorityZones[1] = BattlefieldManager.overridePriorityZones[1].zone
-				BattlefieldManager.overridePriorityZones[1].ticks = BattlefieldManager.overridePriorityZones[1].ticks - 1
-			else
-				local redChangeChance = 1
-				if BattlefieldManager.priorityZones[1] and BattlefieldManager.priorityZones[1].side ~= 1 then
-					redChangeChance = 0.1
-				end
-
-				if #frontLineBlue > 0 then
-					if math.random() <= redChangeChance then
-						BattlefieldManager.priorityZones[1] = frontLineBlue[math.random(1,#frontLineBlue)]
-					end
-				else
-					BattlefieldManager.priorityZones[1] = nil
-				end
-			end
-			
-			if BattlefieldManager.overridePriorityZones[2] and BattlefieldManager.overridePriorityZones[2].ticks > 0 then
-				BattlefieldManager.priorityZones[2] = BattlefieldManager.overridePriorityZones[2].zone
-				BattlefieldManager.overridePriorityZones[2].ticks = BattlefieldManager.overridePriorityZones[2].ticks - 1
-			else
-				local blueChangeChance = 1
-				if BattlefieldManager.priorityZones[2] and BattlefieldManager.priorityZones[2].side ~= 2 then
-					blueChangeChance = 0.1
-				end
-				
-				if #frontLineRed > 0 then
-					if math.random() <= blueChangeChance then
-						BattlefieldManager.priorityZones[2] = frontLineRed[math.random(1,#frontLineRed)]
-					end
-				else
-					BattlefieldManager.priorityZones[2] = nil
-				end
-			end
-
-			if BattlefieldManager.priorityZones[1] then
-				env.info('BattlefieldManager - red priority: '..BattlefieldManager.priorityZones[1].name)
-			else
-				env.info('BattlefieldManager - red no priority')
-			end
-
-			if BattlefieldManager.priorityZones[2] then
-				env.info('BattlefieldManager - blue priority: '..BattlefieldManager.priorityZones[2].name)
-			else
-				env.info('BattlefieldManager - blue no priority')
-			end
-
-			if BattlefieldManager.overridePriorityZones[1] and BattlefieldManager.overridePriorityZones[1].ticks == 0 then
-				BattlefieldManager.overridePriorityZones[1] = nil
-			end
-
-			if BattlefieldManager.overridePriorityZones[2] and BattlefieldManager.overridePriorityZones[2].ticks == 0 then
-				BattlefieldManager.overridePriorityZones[2] = nil
-			end
-			
-			return time+(60*30)
-		end, {context = self}, timer.getTime()+10)
-
-		timer.scheduleFunction(function(param, time)
 			local x = math.random(-50,50) -- the lower limit benefits blue, higher limit benefits red, adjust to increase limit of random boost variance, default (-50,50)
 			local boostIntensity = Config.randomBoost -- adjusts the intensity of the random boost variance, default value = 0.0004
 			local factor = (x*x*x*boostIntensity)/100  -- the farther x is the higher the factor, negative beneifts blue, pozitive benefits red
@@ -267,13 +178,6 @@ do
 
 			return time+(60*30)
 		end, {context = self}, timer.getTime()+1)
-	end
-	
-	function BattlefieldManager.overridePriority(side, zone, ticks)
-		BattlefieldManager.overridePriorityZones[side] = { zone = zone, ticks = ticks }
-		BattlefieldManager.priorityZones[side] = zone
-		
-		env.info('BattlefieldManager.overridePriority - '..side..' focusing on '..zone.name)
 	end
 end
 

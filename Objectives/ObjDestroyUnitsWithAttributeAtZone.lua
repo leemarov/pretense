@@ -5,22 +5,29 @@ do
         ['attr']=true,
         ['amount'] = true,
         ['killed'] = true,
-        ['tgtzone'] = true
+        ['tgtzone'] = true,
+        ['hits'] = true
     }
 
     function ObjDestroyUnitsWithAttributeAtZone:getText()
+        local hits = self.param.hits or 0
+        local progress = math.min(self.param.killed + math.floor(hits/2), self.param.amount)
+
         local msg = 'Destroy at '..self.param.tgtzone.name..': '
         for _,v in ipairs(self.param.attr) do
             msg = msg..v..', '
         end
         msg = msg:sub(1,#msg-2)
-        msg = msg..'\n Progress: '..self.param.killed..'/'..self.param.amount
+        msg = msg..'\n Progress: '..progress..'/'..self.param.amount
         return msg
     end
 
     function ObjDestroyUnitsWithAttributeAtZone:update()
         if not self.isComplete and not self.isFailed then
-            if self.param.killed >= self.param.amount then
+            local hits = self.param.hits or 0
+            local progress = math.min(self.param.killed + math.floor(hits/2), self.param.amount)
+
+            if progress >= self.param.amount then
                 self.isComplete = true
                 return true
             end

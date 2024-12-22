@@ -10,6 +10,7 @@ do
             CommandFunctions.jtac:showMenu()
             CommandFunctions.jtac:setLifeTime(60)
             zone:reveal(60)
+            DependencyManager.get("ReconManager"):revealEnemyInZone(zone, nil, 1, 0.5)
         end
     end
 

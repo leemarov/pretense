@@ -239,6 +239,21 @@ do
 		end
 	end
 	
+	function Utils.toLocalVector(origin, target)
+		return {
+			x = target.x - origin.x,
+			y = target.y - origin.y
+		}
+	end
+
+	function Utils.rotateVector(vec, angles)
+		local rad = math.rad(angles)
+		return {
+			x = vec.x*math.cos(rad) + vec.y*math.sin(rad),
+			y = vec.y*math.cos(rad) - vec.x*math.sin(rad)
+		}
+	end
+	
 	function Utils.merge(table1, table2)
 		local result = {}
 		for i,v in pairs(table1) do
@@ -275,6 +290,22 @@ do
 			end
 		end
 
+		return count
+	end
+
+	function Utils.getAmmoCount(group)
+		local count = 0
+		for _, u in ipairs(group:getUnits()) do
+			if u:isExist() then
+				local ammo = u:getAmmo()
+				if ammo then
+					for i,v in pairs(ammo) do
+						count = count + v.count
+					end
+				end
+			end
+		end
+		
 		return count
 	end
 end

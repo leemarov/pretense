@@ -15,6 +15,36 @@ do
         return 'DEAD'
     end
 
+    function DEAD:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        
+        local zn = ZoneCommand.getZoneByName(self.target)
+        
+        local kill = ObjDestroyUnitsWithAttributeAtZone:new()
+        kill:initialize(self, {
+            attr = {"Air Defence"},
+            amount = 1,
+            killed = 0,
+            tgtzone = zn,
+            hits = 0
+        })
+        table.insert(self.objectives, kill)
+
+        local clear = ObjClearZoneOfUnitsWithAttribute:new()
+        clear:initialize(self, {
+            attr = {"Air Defence"},
+            tgtzone = zn
+        })
+        table.insert(self.objectives, clear)
+
+        description = description..'   Clear '..zn.name..' of any Air Defenses'
+        self.info = {
+            targetzone = zn
+        }
+        self.description = self.description..description
+    end
+
     function DEAD:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
@@ -36,7 +66,8 @@ do
                 attr = {"Air Defence"},
                 amount = 1,
                 killed = 0,
-                tgtzone = zn
+                tgtzone = zn,
+                hits = 0
             })
             table.insert(self.objectives, kill)
 

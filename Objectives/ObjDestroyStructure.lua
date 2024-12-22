@@ -3,8 +3,7 @@ ObjDestroyStructure = Objective:new(Objective.types.destroy_structure)
 do
     ObjDestroyStructure.requiredParams = {
         ['target']=true,
-        ['tgtzone']=true,
-        ['killed']=true
+        ['tgtzone']=true
     }
 
     function ObjDestroyStructure:getText()
@@ -35,10 +34,6 @@ do
 
     function ObjDestroyStructure:update()
         if not self.isComplete and not self.isFailed then
-            if self.param.killed then
-                self.isComplete = true
-                return true
-            end
 
             local target = self.param.target
             local exists = false
@@ -53,14 +48,7 @@ do
             end
 
             if not exists then
-                if not self.firstFailure then
-                    self.firstFailure = timer.getAbsTime()
-                end
-            end
-
-            if self.firstFailure and (timer.getAbsTime() - self.firstFailure > 1*60) then
-                self.isFailed = true
-                self.mission.failureReason = 'Structure was destoyed by someone else.'
+                self.isComplete = true
                 return true
             end
         end

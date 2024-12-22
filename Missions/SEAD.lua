@@ -15,6 +15,29 @@ do
         return 'SEAD'
     end
 
+    function SEAD:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        
+        local zn = ZoneCommand.getZoneByName(self.target)
+        
+        local kill = ObjDestroyUnitsWithAttributeAtZone:new()
+        kill:initialize(self, {
+            attr = {'SAM SR','SAM TR'},
+            amount = 1,
+            killed = 0,
+            tgtzone = zn,
+            hits = 0
+        })
+
+        table.insert(self.objectives, kill)
+        description = description..'   Destroy '..kill.param.amount..' Search Radar or Track Radar at '..zn.name
+        self.info = {
+            targetzone = zn
+        }
+        self.description = self.description..description
+    end
+
     function SEAD:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
@@ -46,7 +69,8 @@ do
                 attr = {'SAM SR','SAM TR'},
                 amount = 1,
                 killed = 0,
-                tgtzone = zn
+                tgtzone = zn,
+                hits = 0
             })
 
             table.insert(self.objectives, kill)

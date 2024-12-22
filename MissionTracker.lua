@@ -23,7 +23,8 @@ do
         [Mission.types.anti_runway] = 2,
         [Mission.types.csar] = 1,
         [Mission.types.extraction] = 1,
-        [Mission.types.deploy_squad] = 3,
+        [Mission.types.deploy_squad] = 5,
+        [Mission.types.salvage] = 3,
     }
 
     if Config.missions then
@@ -52,16 +53,6 @@ do
             elseif world.getPlayer() then
                 local unit = world.getPlayer()
                 state:printMissionBoard(unit:getID(), nil, event.initiator:getGroup():getName())
-            end
-            return true
-        end, nil, obj)
-
-        DependencyManager.get("MarkerCommands"):addCommand('help', function(event, _, state) 
-            if event.initiator then
-                state:printHelp(event.initiator:getID())
-            elseif world.getPlayer() then
-                local unit = world.getPlayer()
-                state:printHelp(unit:getID())
             end
             return true
         end, nil, obj)
@@ -128,8 +119,8 @@ do
 	end
 
     function MissionTracker:menuSetup()
-        MenuRegistry:register(2, function(event, context)
-            if event.id == world.event.S_EVENT_BIRTH and event.initiator and event.initiator.getPlayerName then
+        MenuRegistry.register(2, function(event, context)
+            if (event.id == world.event.S_EVENT_PLAYER_ENTER_UNIT or event.id == world.event.S_EVENT_BIRTH) and event.initiator and event.initiator.getPlayerName then
 				local player = event.initiator:getPlayerName()
 				if player then
 					local groupid = event.initiator:getGroup():getID()
@@ -142,8 +133,9 @@ do
 
                     if not context.groupMenus[groupid] then
                         local menu = missionCommands.addSubMenuForGroup(groupid, 'Missions')
-                        missionCommands.addCommandForGroup(groupid, 'List Missions', menu, Utils.log(context.printMissionBoard), context, nil, groupid, groupname)
-                        missionCommands.addCommandForGroup(groupid, 'Active Mission', menu, Utils.log(context.printActiveMission), context, nil, groupid, nil, groupname)
+                        --missionCommands.addCommandForGroup(groupid, 'List Missions', menu, Utils.log(context.printMissionBoard), context, nil, groupid, groupname)
+                        --missionCommands.addCommandForGroup(groupid, 'Active Mission', menu, Utils.log(context.printActiveMission), context, nil, groupid, nil, groupname)
+                        missionCommands.addCommandForGroup(groupid, 'Mission', menu, Utils.log(context.printActiveMissionOrMissionBoard), context, groupid, groupname)
                         
                         local dial = missionCommands.addSubMenuForGroup(groupid, 'Dial Code', menu)
                         for i1=1,5,1 do
@@ -160,57 +152,41 @@ do
                             end
                         end
                         
-                        local leavemenu = missionCommands.addSubMenuForGroup(groupid, 'Leave Mission', menu)
+                        missionCommands.addCommandForGroup(groupid, 'Start', menu, Utils.log(context.forceStartMission), context, player)
+                        local leavemenu = missionCommands.addSubMenuForGroup(groupid, 'Leave', menu)
                         missionCommands.addCommandForGroup(groupid, 'Confirm to leave mission', leavemenu, Utils.log(context.leaveMission), context, player)
                         missionCommands.addCommandForGroup(groupid, 'Cancel', leavemenu, function() end)
-
-                        missionCommands.addCommandForGroup(groupid, 'Help', menu, Utils.log(context.printHelp), context, nil, groupid)
                         
                         context.groupMenus[groupid] = menu
-                    end
-				end
-			elseif (event.id == world.event.S_EVENT_PLAYER_LEAVE_UNIT or event.id == world.event.S_EVENT_DEAD) and event.initiator and event.initiator.getPlayerName then
-                local player = event.initiator:getPlayerName()
-				if player then
-					local groupid = event.initiator:getGroup():getID()
-					
-					if context.groupMenus[groupid] then
-                        missionCommands.removeItemForGroup(groupid, context.groupMenus[groupid])
-                        context.groupMenus[groupid] = nil
                     end
 				end
             end
         end, self)
     end
 
-    function MissionTracker:printHelp(unitid, groupid)
-        local msg = 'Missions can only be accepted or joined while landed at a friendly zone.\n'
-        msg = msg.. 'Rewards from mission completion need to be claimed by landing at a friendly zone.\n\n'
-        msg = msg.. 'Accept mission:\n'
-        msg = msg.. ' Each mission has a 4 digit code listed next to its name.\n To accept a mission, either dial its code from the mission radio menu,\n or create a marker on the map and set its text to:\n'
-        msg = msg.. '   accept:code\n'
-        msg = msg.. ' (ex. accept:4126)\n\n'
-        msg = msg.. 'Join mission:\n'
-        msg = msg.. ' You can team up with other players, by joining a mission they already accepted.\n'
-        msg = msg.. ' Missions can only be joined if all players who are already part of that mission\n have not taken off yet.\n'
-        msg = msg.. ' When a mission is completed each player has to land to claim their reward individually.\n'
-        msg = msg.. ' To join a mission, ask for the join code from a player who is already part of the mission,\n dial it in from the mission radio menu,\n or create a marker on the map and set its text to:\n'
-        msg = msg.. '   join:code\n'
-        msg = msg.. ' (ex. join:4126)\n\n'
-        msg = msg.. 'Map marker commands:\n'
-        msg = msg.. ' list - displays mission board\n'
-        msg = msg.. ' accept:code - accepts mission with corresponding code\n'
-        msg = msg.. ' join:code - joins other players mission with corresponding code\n'
-        msg = msg.. ' active - displays active mission\n'
-        msg = msg.. ' leave - leaves active mission\n'
-        msg = msg.. ' help - displays this message'
+    function MissionTracker:printActiveMissionOrMissionBoard(groupid, groupname)
+        env.info('MissionTracker - printActiveMissionOrMissionBoard: '..tostring(groupname)..' requested group print.')
+        local gr = Group.getByName(groupname)
+        for i,v in ipairs(gr:getUnits()) do
+            if v.getPlayerName and v:getPlayerName() then 
+                local mis = nil
+                for i2,v2 in pairs(self.activeMissions) do
+                    for pl,un in pairs(v2.players) do
+                        if pl == v:getPlayerName() then
+                            mis = v2
+                            break
+                        end
+                    end
 
-        if unitid then
-            trigger.action.outTextForUnit(unitid, msg, 30)
-        elseif groupid then
-            trigger.action.outTextForGroup(groupid, msg, 30)
-        else
-            --trigger.action.outText(msg, 30)
+                    if mis then break end
+                end
+
+                if mis then 
+                    self:printActiveMission(v:getID(), gr:getID(), v:getPlayerName())
+                else
+                    self:printMissionBoard(v:getID(), gr:getID(), groupname)
+                end
+            end
         end
     end
 
@@ -340,34 +316,12 @@ do
                     if mis.state == Mission.states.failed then
                         param.missionBoard[code]=nil
                         env.info('Mission code'..code..' canceled due to objectives failed')
-                        trigger.action.outTextForCoalition(2,'Mission ['..mis.missionID..'] '..mis.name..' was cancelled',5)
+                        --trigger.action.outTextForCoalition(2,'Mission ['..mis.missionID..'] '..mis.name..' was cancelled',5)
                     end
                 end
             end
 
-            local misCount = Utils.getTableSize(param.missionBoard)
-            local toGen = MissionTracker.missionBoardSize-misCount
-            if toGen > 0 then
-                local validMissions = {}
-                for _,v in pairs(Mission.types) do
-                    if self:canCreateMission(v) then
-                        table.insert(validMissions,v)
-                    end
-                end
-
-                if #validMissions > 0  then
-                    for i=1,toGen,1 do
-                        if #validMissions > 0 then
-                            local choice = math.random(1,#validMissions)
-                            local misType = validMissions[choice]
-                            table.remove(validMissions, choice)
-                            param:generateMission(misType)
-                        else
-                            break
-                        end
-                    end
-                end
-            end
+            --param:fillEmptySlots()
 
             return time+1
         end, self, timer.getTime()+1)
@@ -447,7 +401,7 @@ do
 
                                 if isInstant then
                                     DependencyManager.get("PlayerTracker"):addStat(p, finalAmount, reward.type)
-                                    mis:pushMessageToPlayer(p, '+'..reward.amount..' '..reward.type)
+                                    mis:pushMessageToPlayer(p, '+'..finalAmount..' '..reward.type)
                                 else
                                     DependencyManager.get("PlayerTracker"):addTempStat(p, finalAmount, reward.type)
                                 end
@@ -493,6 +447,17 @@ do
 				end
 			end
 
+            if event.id == world.event.S_EVENT_HIT and event.initiator and event.target and event.initiator.getPlayerName then
+				local player = event.initiator:getPlayerName()
+				if player and 
+                    event.initiator:isExist() and
+                    event.initiator.getCoalition and 
+                    event.target.getCoalition and 
+                    event.initiator:getCoalition() ~= event.target:getCoalition() then
+					    self.context:tallyHit(player, event.target)
+				end
+			end
+
             if event.id == world.event.S_EVENT_SHOT and event.initiator and event.weapon and event.initiator.getPlayerName then
                 local player = event.initiator:getPlayerName()
 				if player and event.initiator:isExist() and event.weapon:isExist() then
@@ -504,64 +469,56 @@ do
 		world.addEventHandler(ev)
 	end
 
-    function MissionTracker:generateMission(misType)
-        local misid = self:getNewMissionID()
-        env.info('MissionTracker - generating mission type ['..misType..'] id code['..misid..']')
-        
-        local newmis = nil
-        if misType == Mission.types.cap_easy then
-            newmis = CAP_Easy:new(misid, misType)
-        elseif misType == Mission.types.cap_medium then
-            newmis = CAP_Medium:new(misid, misType)
-        elseif misType == Mission.types.cas_easy then
-            newmis = CAS_Easy:new(misid, misType)
-        elseif misType == Mission.types.cas_medium then
-            newmis = CAS_Medium:new(misid, misType)
-        elseif misType == Mission.types.cas_hard then
-            newmis = CAS_Hard:new(misid, misType)
-        elseif misType == Mission.types.sead then
-            newmis = SEAD:new(misid, misType)
-        elseif misType == Mission.types.supply_easy then
-            newmis = Supply_Easy:new(misid, misType)
-        elseif misType == Mission.types.supply_hard then
-            newmis = Supply_Hard:new(misid, misType)
-        elseif misType == Mission.types.strike_veryeasy then
-            newmis = Strike_VeryEasy:new(misid, misType)
-        elseif misType == Mission.types.strike_easy then
-            newmis = Strike_Easy:new(misid, misType)
-        elseif misType == Mission.types.strike_medium then
-            newmis = Strike_Medium:new(misid, misType)
-        elseif misType == Mission.types.strike_hard then
-            newmis = Strike_Hard:new(misid, misType)
-        elseif misType == Mission.types.deep_strike then
-            newmis = Deep_Strike:new(misid, misType)
-        elseif misType == Mission.types.dead then
-            newmis = DEAD:new(misid, misType)
-        elseif misType == Mission.types.escort then
-            newmis = Escort:new(misid, misType)
-        elseif misType == Mission.types.tarcap then
-            newmis = TARCAP:new(misid, misType, self.activeMissions)
-        elseif misType == Mission.types.recon then
-            newmis = Recon:new(misid, misType)
-        elseif misType == Mission.types.bai then
-            newmis = BAI:new(misid, misType)
-        elseif misType == Mission.types.anti_runway then
-            newmis = Anti_Runway:new(misid, misType)
-        elseif misType == Mission.types.csar then
-            newmis = CSAR:new(misid, misType)
-        elseif misType == Mission.types.extraction then
-            newmis = Extraction:new(misid, misType)
-        elseif misType == Mission.types.deploy_squad then
-            newmis = DeploySquad:new(misid, misType)
-        end
+    function MissionTracker:fillEmptySlots()
+        local misCount = Utils.getTableSize(self.missionBoard)
+        local toGen = MissionTracker.missionBoardSize-misCount
+        if toGen > 0 then
+            local validMissions = {}
+            for _,v in pairs(Mission.types) do
+                if self:canCreateMission(v) then
+                    table.insert(validMissions,v)
+                end
+            end
 
+            if #validMissions > 0  then
+                for i=1,toGen,1 do
+                    if #validMissions > 0 then
+                        local choice = math.random(1,#validMissions)
+                        local misType = validMissions[choice]
+                        table.remove(validMissions, choice)
+                        self:generateMission(misType)
+                    else
+                        break
+                    end
+                end
+            end
+        end
+    end 
+
+    function MissionTracker:createMission(misType, target)
+        local misid = self:getNewMissionID()
+        env.info('MissionTracker - creating mission type ['..misType..'] id code['..misid..']')
+        
+        local type = Mission.getType(misType)
+        local newmis = nil
+        if type then
+            newmis = type:new(misid, misType, target)
+        end 
+
+        if not newmis or #newmis.objectives == 0 then return end
+
+        return newmis
+    end
+
+    function MissionTracker:generateMission(misType)
+        
+        local newmis = self:createMission(misType)
+        
         if not newmis then return end
 
-        if #newmis.objectives == 0 then return end
-
-        self.missionBoard[misid] = newmis
-        env.info('MissionTracker - generated mission id code'..misid..' \n'..newmis.description)
-        trigger.action.outTextForCoalition(2,'New mission available: '..newmis.name,5)
+        self.missionBoard[newmis.missionID] = newmis
+        env.info('MissionTracker - generated mission id code'..newmis.missionID..' \n'..newmis.description)
+        --trigger.action.outTextForCoalition(2,'New mission available: '..newmis.name,5)
     end
 
     function MissionTracker:tallyWeapon(player, weapon)
@@ -598,6 +555,17 @@ do
             if m.players[player] then
                 if m.state == Mission.states.active then
                     m:tallyKill(kill)
+                end
+            end
+        end
+    end    
+    
+    function MissionTracker:tallyHit(player,hit)
+        env.info("MissionTracker - tallyHit: "..player.." hit "..hit:getName())
+        for _,m in pairs(self.activeMissions) do
+            if m.players[player] then
+                if m.state == Mission.states.active then
+                    m:tallyHit(hit)
                 end
             end
         end
@@ -669,6 +637,17 @@ do
         end
     end
 
+    function MissionTracker:tallyUnpackCrate(player, zonename, cargo)
+        env.info("MissionTracker - tallyUnpackCrate: "..player.." unpacked "..cargo.name.." at "..zonename)
+        for _,m in pairs(self.activeMissions) do
+            if m.players[player] then
+                if m.state == Mission.states.active then
+                    m:tallyUnpackCrate(player, zonename, cargo)
+                end
+            end
+        end
+    end
+
     function MissionTracker:activateOrJoinMissionForGroup(code, groupname)
         if groupname then
             env.info('MissionTracker - activateOrJoinMissionForGroup: '..tostring(groupname)..' requested activate or join '..code)
@@ -697,6 +676,14 @@ do
             local zn = ZoneCommand.getZoneOfUnit(unit:getName())
             if not zn then 
                 zn = CarrierCommand.getCarrierOfUnit(unit:getName())
+            end
+
+            if not zn then 
+                zn = FARPCommand.getFARPOfUnit(unit:getName())
+                if zn and not zn:hasFeature(PlayerLogistics.buildables.satuplink) then
+                    trigger.action.outTextForUnit(un:getID(), zn.name..' lacks a Satellite Uplink. Can not accept missions.', 10)
+                    return false
+                end
             end
 
             if not zn or zn.side ~= unit:getCoalition() then 
@@ -754,6 +741,14 @@ do
             if not zn then 
                 zn = CarrierCommand.getCarrierOfUnit(unit:getName())
             end
+            
+            if not zn then 
+                zn = FARPCommand.getFARPOfUnit(unit:getName())
+                if zn and not zn:hasFeature(PlayerLogistics.buildables.satuplink) then
+                    trigger.action.outTextForUnit(un:getID(), zn.name..' lacks a Satellite Uplink. Can not join missions.', 10)
+                    return false
+                end
+            end
 
             if not zn or zn.side ~= unit:getCoalition() then 
                 trigger.action.outTextForUnit(unit:getID(), 'Can only join mission while inside friendly zone', 5)
@@ -774,7 +769,7 @@ do
             return false 
         end
 
-        if mis.state ~= Mission.states.preping then
+        if Config.restrictMissionAcceptance and mis.state ~= Mission.states.preping then
             trigger.action.outTextForUnit(unit:getID(), 'Mission can only be joined if its members have not taken off yet.', 5)
             return false 
         end
@@ -809,6 +804,21 @@ do
         return true
     end
 
+    function MissionTracker:forceStartMission(player)
+        for _,mis in pairs(self.activeMissions) do
+            if mis:getPlayerUnit(player) then
+                mis:updateState(Mission.states.active)
+                mis:pushMessageToPlayers(mis.name..' mission has started')
+                local missionstatus = mis:getDetailedDescription()
+                mis:pushMessageToPlayers(missionstatus)
+
+                break
+            end
+        end
+        
+        return true
+    end
+
     function MissionTracker:canCreateMission(misType)
         if not MissionTracker.maxMissionCount[misType] then return false end
         
@@ -823,50 +833,9 @@ do
 
         if missionCount >= MissionTracker.maxMissionCount[misType] then return false end
 
-        if misType == Mission.types.cap_easy then
-            return CAP_Easy.canCreate()
-        elseif misType == Mission.types.cap_medium then
-            return CAP_Medium.canCreate()
-        elseif misType == Mission.types.cas_easy then
-            return CAS_Easy.canCreate()
-        elseif misType == Mission.types.cas_medium then
-            return CAS_Medium.canCreate()
-        elseif misType == Mission.types.sead then
-            return SEAD.canCreate()
-        elseif misType == Mission.types.dead then
-            return DEAD.canCreate()
-        elseif misType == Mission.types.cas_hard then
-            return CAS_Hard.canCreate()
-        elseif misType == Mission.types.supply_easy then
-            return Supply_Easy.canCreate()
-        elseif misType == Mission.types.supply_hard then
-            return Supply_Hard.canCreate()
-        elseif misType == Mission.types.strike_veryeasy then
-            return Strike_VeryEasy.canCreate()
-        elseif misType == Mission.types.strike_easy then
-            return Strike_Easy.canCreate()
-        elseif misType == Mission.types.strike_medium then
-            return Strike_Medium.canCreate()
-        elseif misType == Mission.types.strike_hard then
-            return Strike_Hard.canCreate()
-        elseif misType == Mission.types.deep_strike then
-            return Deep_Strike.canCreate()
-        elseif misType == Mission.types.escort then
-            return Escort.canCreate()
-        elseif misType == Mission.types.tarcap then
-            return TARCAP.canCreate(self.activeMissions)
-        elseif misType == Mission.types.recon then
-            return Recon.canCreate()
-        elseif misType == Mission.types.bai then
-            return BAI.canCreate()
-        elseif misType == Mission.types.anti_runway then
-            return Anti_Runway.canCreate()
-        elseif misType == Mission.types.csar then
-            return CSAR.canCreate()
-        elseif misType == Mission.types.extraction then
-            return Extraction.canCreate()
-        elseif misType == Mission.types.deploy_squad then
-            return DeploySquad.canCreate()
+        local type = Mission.getType(misType)
+        if type then
+            return type.canCreate()
         end
 
         return false

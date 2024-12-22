@@ -23,6 +23,38 @@ do
         return unit:hasAttribute('Helicopters')
     end
 
+    function Escort:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+
+        local convoy = DependencyManager.get("GroupMonitor"):getGroup(self.target)
+        
+        local escort = ObjEscortGroup:new()
+        escort:initialize(self, {
+            maxAmount = 60*7,
+            amount = 60*7,
+            proxDist = 400,
+            target = convoy,
+            lastUpdate = timer.getAbsTime()
+        })
+        
+        table.insert(self.objectives, escort)
+
+        local nearzone = ""
+        local gr = Group.getByName(convoy.name)
+        if gr and gr:getSize()>0 then
+            local un = gr:getUnit(1)
+            local closest = ZoneCommand.getClosestZoneToPoint(un:getPoint())
+            if closest then
+                nearzone = ' near '..closest.name..''
+            end
+        end
+
+        description = description..'   Escort convoy'..nearzone..' on route to their destination'
+
+        self.description = self.description..description
+    end
+
     function Escort:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''

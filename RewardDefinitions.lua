@@ -24,7 +24,8 @@ do
       [Mission.types.recon]           = { xp = { low = 20, high = 30, boost = 0   } },
       [Mission.types.csar]            = { xp = { low = 20, high = 30, boost = 0   } },
       [Mission.types.extraction]      = { xp = { low = 20, high = 30, boost = 0   } },
-      [Mission.types.deploy_squad]    = { xp = { low = 20, high = 30, boost = 0   } }
+      [Mission.types.deploy_squad]    = { xp = { low = 20, high = 30, boost = 0   } },
+      [Mission.types.salvage]         = { xp = { low = 20, high = 30, boost = 0   } }
     }
 
     RewardDefinitions.actions = {

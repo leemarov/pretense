@@ -57,21 +57,6 @@ do
         obj.link4 = radioConfig.link4
         obj.radio = radioConfig.radio
 
-        obj.spawns = {}
-		for i,v in pairs(mist.DBs.groupsByName) do
-			if v.units[1].skill == 'Client' then
-				local pos3d = {
-					x = v.units[1].point.x,
-					y = 0,
-					z = v.units[1].point.y
-				}
-				
-				if Utils.isInCircle(pos3d, unit:getPoint(), obj.range)then
-					table.insert(obj.spawns, {name=i})
-				end
-			end
-		end
-
         obj.index = CarrierCommand.currentIndex
 		CarrierCommand.currentIndex = CarrierCommand.currentIndex + 1
 
@@ -94,7 +79,6 @@ do
 
         obj:start()
         obj:refreshText()
-        obj:refreshSpawnBlocking()
 		CarrierCommand.allCarriers[obj.name] = obj
         return obj
     end
@@ -197,7 +181,7 @@ do
 			env.info('CarrierCommand: processAir ['..group.name..'] started existing state=takeoff')
 		elseif group.state == CarrierCommand.supportStates.takeoff then
 			if timer.getAbsTime() - group.lastStateTime > CarrierCommand.blockedDespawnTime then
-				if gr and gr:getSize()>0 and gr:getUnit(1):isExist() then
+				if gr and gr:getSize()>0 and gr:getUnit(1) and gr:getUnit(1):isExist() then
 					local frUnit = gr:getUnit(1)
 					local cz = CarrierCommand.getCarrierOfUnit(frUnit:getName())
 					if Utils.allGroupIsLanded(gr, cz ~= nil) then
@@ -243,10 +227,15 @@ do
 						end
 						
 						if group.type == CarrierCommand.supportTypes.transport then
-							if z then
-								z:capture(gr:getCoalition())
-								z:addResource(group.cost)
-								env.info('CarrierCommand: processAir ['..group.name..'] has supplied ['..z.name..'] with ['..group.cost..']')
+							local tzone = z
+							if not tzone then
+								tzone = FARPCommand.getFARPOfUnit(firstUnit)
+							end
+
+							if tzone then
+								tzone:capture(gr:getCoalition())
+								tzone:addResource(group.cost)
+								env.info('CarrierCommand: processAir ['..group.name..'] has supplied ['..tzone.name..'] with ['..group.cost..']')
 							end
 						else
 							if z and z.side == gr:getCoalition() then
@@ -438,6 +427,7 @@ do
 		local targetCoalition = nil
 		local minDistToFront = nil
 		local includeCarriers = nil
+		local includeFarps = nil
 		local onlyRevealed = nil
 
 		if data.type == CarrierCommand.supportTypes.strike then
@@ -454,12 +444,13 @@ do
 			includeCarriers = true
 		elseif data.type == CarrierCommand.supportTypes.transport then
 			targetCoalition = {0,2}
+			includeFarps = true
 		end
 		
 		local success = MenuRegistry.showTargetZoneMenu(playerGroup:getID(), "Select "..data.name..'('..data.type..") target", function(params)
 			CarrierCommand.spawnSupport(params.data, params.zone)
 			trigger.action.outTextForGroup(params.groupid, params.data.name..'('..params.data.type..') heading to '..params.zone.name, 10)
-		end, targetCoalition, minDistToFront, data, includeCarriers, onlyRevealed)
+		end, targetCoalition, minDistToFront, data, includeCarriers, onlyRevealed, includeFarps)
 
 		if success then
 			self:removeResource(data.cost)
@@ -631,6 +622,10 @@ do
 			if not supplyPoint then
 				supplyPoint = trigger.misc.getZone(param.data.target.name)
 			end
+
+			if not supplyPoint then
+				supplyPoint = param.data.target.zone
+			end
 			
 			local point = { x=supplyPoint.point.x, y = supplyPoint.point.z}
 			TaskExtensions.landAtPoint(gr, point, param.data.altitude, true)
@@ -708,22 +703,14 @@ do
     function CarrierCommand:addResource(amount)
 		self.resource = self.resource+amount
 		self.resource = math.floor(math.min(self.resource, self.maxResource))
-        self:refreshSpawnBlocking()
         self:refreshText()
     end
 
     function CarrierCommand:removeResource(amount)
 		self.resource = self.resource-amount
 		self.resource = math.floor(math.max(self.resource, 0))
-        self:refreshSpawnBlocking()
         self:refreshText()
     end
-
-    function CarrierCommand:refreshSpawnBlocking()
-		for _,v in ipairs(self.spawns) do
-			trigger.action.setUserFlag(v.name, self.resource < Config.carrierSpawnCost)
-		end
-	end
 
     function CarrierCommand:refreshText()		
         local build = ''
@@ -772,6 +759,9 @@ do
 
     function CarrierCommand:capture(side)
     end
+
+	function CarrierCommand:pushMisOfType(mistype)
+	end
 
     function CarrierCommand:criticalOnSupplies()
 		return self.resource<=self.spendTreshold
@@ -836,8 +826,8 @@ do
 	end
 
 	CarrierCommand.groupMenus = {}
-	MenuRegistry:register(6, function(event, context)
-		if event.id == world.event.S_EVENT_BIRTH and event.initiator and event.initiator.getPlayerName then
+	MenuRegistry.register(6, function(event, context)
+		if (event.id == world.event.S_EVENT_PLAYER_ENTER_UNIT or event.id == world.event.S_EVENT_BIRTH) and event.initiator and event.initiator.getPlayerName then
 			local player = event.initiator:getPlayerName()
 			if player then
 				local groupid = event.initiator:getGroup():getID()
@@ -914,16 +904,6 @@ do
 					end
 
 					CarrierCommand.groupMenus[groupid] = menu
-				end
-			end
-		elseif (event.id == world.event.S_EVENT_PLAYER_LEAVE_UNIT or event.id == world.event.S_EVENT_DEAD) and event.initiator and event.initiator.getPlayerName then
-			local player = event.initiator:getPlayerName()
-			if player then
-				local groupid = event.initiator:getGroup():getID()
-				
-				if CarrierCommand.groupMenus[groupid] then
-					missionCommands.removeItemForGroup(groupid, CarrierCommand.groupMenus[groupid])
-					CarrierCommand.groupMenus[groupid] = nil
 				end
 			end
 		end

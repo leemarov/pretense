@@ -36,6 +36,7 @@ do
                                     if srfType ~= land.SurfaceType.WATER and srfType ~= land.SurfaceType.SHALLOW_WATER then
                                         local gr = Spawner.createPilot(name, pos)
                                         self.context:addPilot(name, gr)
+                                        TransmissionManager.pilotCallout(TransmissionManager.radios.guard, event.initiator:getPoint())
                                     end
                                 end
                             end

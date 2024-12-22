@@ -9,6 +9,7 @@ do
         destroy_attr_at_zone = 'destroy_attr_at_zone',  -- any of playerlist kill event on target at [zone] with any of [attribute]
         clear_attr_at_zone = 'clear_attr_at_zone',      -- [zone] does not have any units with [attribute]
         destroy_structure = 'destroy_structure',        -- [structure] is killed by any player (getDesc().displayName or getDesc().typeName:gsub('%.','') must match)
+        hit_structure = 'hit_structure',                -- [structure] is hit by any player (getDesc().displayName or getDesc().typeName:gsub('%.','') must match)
         destroy_group = 'destroy_group',                -- [group] is missing from mission AND any player killed unit from group at least once
         supply = 'supply',                              -- any of playerlist unload [amount] supply at [zone]
         extract_pilot = 'extract_pilot',                  -- players extracted specific ejected pilots
@@ -19,7 +20,8 @@ do
         protect = 'protect',                            -- protect other mission
         air_kill_bonus = 'air_kill_bonus',               -- award bonus for air kills
         bomb_in_zone = 'bomb_in_zone',                     -- bombs tallied inside zone
-        player_close_to_zone = 'player_close_to_zone' -- player is close to point
+        player_close_to_zone = 'player_close_to_zone', -- player is close to point
+        recover_crate = 'recover_crate'                 -- crate unpacked in a friendly zone
     }
 
     function Objective:new(type)

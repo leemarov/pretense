@@ -20,6 +20,54 @@ do
         return unit:hasAttribute('Planes')
     end
 
+    function CAP_Medium:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        
+        local zn1 = ZoneCommand.getZoneByName(self.target[1])
+        local zn2 = ZoneCommand.getZoneByName(self.target[2])
+
+        local patrol1 = ObjPlayerCloseToZone:new()
+        patrol1:initialize(self, {
+            target = zn1,
+            range = 20000,
+            amount = 10*60,
+            maxAmount = 10*60,
+            lastUpdate = 0
+        })
+
+        table.insert(self.objectives, patrol1)
+
+        local patrol2 = ObjPlayerCloseToZone:new()
+        patrol2:initialize(self, {
+            target = zn2,
+            range = 20000,
+            amount = 10*60,
+            maxAmount = 10*60,
+            lastUpdate = 0
+        })
+
+        table.insert(self.objectives, patrol2)
+        description = description..'   Patrol airspace near '..zn1.name..' and '..zn2.name..'\n'
+
+        local rewardDef = RewardDefinitions.missions[self.type]
+
+        local kills = ObjAirKillBonus:new()
+        kills:initialize(self, {
+            attr = {'Planes', 'Helicopters'},
+            bonus = {
+                [PlayerTracker.statTypes.xp] = rewardDef.xp.boost
+            },
+            count = 0,
+            linkedObjectives = {patrol1, patrol2}
+        })
+
+        table.insert(self.objectives, kills)
+        description = description..'   Aircraft kills increase reward'
+
+        self.description = self.description..description
+    end
+
     function CAP_Medium:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''

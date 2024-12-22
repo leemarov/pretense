@@ -453,7 +453,10 @@ do
 		local land = {
 			id='Land',
 			params = {
-				point = {x = startPos.x, y=startPos.z}
+				point = {x = startPos.x, y=startPos.z},
+				x = startPos.x,
+				y = startPos.z,
+				--combatLandingFlag = true
 			}
 		}
 
@@ -1188,6 +1191,62 @@ do
 		
 		group:getController():setTask(mis)
 	end
+
+	function TaskExtensions.assaultGroup(group, target)
+		if not group or not target then return end
+		if not group:isExist() or group:getSize()==0 then return end
+		local startPos = group:getUnit(1):getPoint()
+
+		local mis = {
+			id='Mission',
+			params = {
+				route = {
+					points = {}
+				}  
+			}
+		}
+		
+		local attack = {
+			id = 'ComboTask',
+			params = {
+				tasks = {
+				}
+			}
+		}
+
+		table.insert(attack.params.tasks, {
+			enabled = true,
+			id = 'AttackGroup',
+			number = 3,
+			params = {
+				groupId = target:getID()
+			}
+		})
+
+		table.insert(mis.params.route.points, {
+			type= AI.Task.WaypointType.TURNING_POINT,
+			x = startPos.x,
+			y = startPos.z,
+			speed = 100,
+			action = AI.Task.VehicleFormation.DIAMOND,
+			task = attack
+		})
+
+		for i,v in ipairs(target:getUnits()) do
+			local tgtp = v:getPoint()
+			table.insert(mis.params.route.points, {
+				type= AI.Task.WaypointType.TURNING_POINT,
+				x = tgtp.x,
+				y = tgtp.z,
+				speed = 100,
+				action = AI.Task.VehicleFormation.DIAMOND
+			})
+		end
+		
+		group:getController():setOption(9, 1)
+		group:getController():setOption(9, 0)
+		group:getController():setTask(mis)
+	end
 	
 	function TaskExtensions.moveOnRoadToPoint(group, point, detour) -- point = {x,y}
 		if not group or not point then return end
@@ -1284,7 +1343,10 @@ do
 		local land = {
 			id='Land',
 			params = {
-				point = point
+				point = point,
+				x = point.x,
+				y = point.y,
+				--combatLandingFlag = true
 			}
 		}
 		
@@ -1336,7 +1398,10 @@ do
 		local land = {
 			id='Land',
 			params = {
-				point = point
+				point = point,
+				x = point.x,
+				y = point.y,
+				--combatLandingFlag = true
 			}
 		}
 
@@ -1515,6 +1580,67 @@ do
 				}  
 			}
 		})
+	end
+
+	function TaskExtensions.sendToPoint(group, point)
+		local gp = group:getUnit(1):getPoint()
+
+		local mis = {
+			id='Mission',
+			params = {
+				route = {
+					points = {
+						[1] = {
+							type= AI.Task.WaypointType.TURNING_POINT,
+							x = gp.x,
+							y = gp.z,
+							speed = 1000,
+							action = AI.Task.VehicleFormation.DIAMOND
+						},
+						[2] = {
+							type= AI.Task.WaypointType.TURNING_POINT,
+							x = point.x,
+							y = point.z,
+							speed = 1000,
+							action = AI.Task.VehicleFormation.DIAMOND
+						}
+					}
+				}  
+			}
+		}
+
+		group:getController():setOption(0, 4)
+		group:getController():setOption(9, 1)
+		group:getController():setTask(mis)
+	end
+
+	function TaskExtensions.stopGroup(group)
+		local gp = group:getUnit(1):getPoint()
+
+		local mis = {
+			id='Mission',
+			params = {
+				route = {
+					points = {
+						[1] = {
+							type= AI.Task.WaypointType.TURNING_POINT,
+							x = gp.x,
+							y = gp.z,
+							speed = 0,
+							action = AI.Task.VehicleFormation.DIAMOND
+						}
+					}
+				}  
+			}
+		}
+
+		group:getController():setOption(0, 0)
+		group:getController():setOption(9, 2)
+		group:getController():setTask(mis)
+	end
+
+	function TaskExtensions.enableSamEvasion(group)
+		group:getController():setOption(31, true)
 	end
 
 	function TaskExtensions.setupCarrier(unit, icls, acls, tacan, link4, radio)

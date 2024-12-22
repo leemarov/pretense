@@ -24,6 +24,28 @@ do
         end
     end
 
+    function Supply_Easy:createObjective()
+        self.completionType = Mission.completion_type.all
+        local description = ''
+        
+        local zn = ZoneCommand.getZoneByName(self.target)
+        
+        local deliver = ObjSupplyZone:new()
+        deliver:initialize(self, {
+            amount = math.random(2,6)*250,
+            delivered = 0,
+            tgtzone = zn
+        })
+        
+        table.insert(self.objectives, deliver)
+        description = description..'   Deliver '..deliver.param.amount..' of supplies to '..zn.name
+        self.info = {
+            targetzone = zn
+        }
+
+        self.description = self.description..description
+    end
+
     function Supply_Easy:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''

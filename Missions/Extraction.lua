@@ -21,6 +21,10 @@ do
     end
 
     function Extraction:generateObjectives()
+        env.info("ERROR - Can't create Extraction on demand")
+    end
+
+    function Extraction:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''
         

@@ -32,7 +32,7 @@ do
 				weight = 900,
 				cost= 300,
 				jobtime= 60*60,
-				extracttime= 60*30,
+				extracttime= 60*60,
 				size = 5,
 				side = 2,
 				isAISpawned = true
@@ -56,8 +56,32 @@ do
 				weight = 900,
 				cost= 500,
 				jobtime= 60*60,
-				extracttime= 60*30,
+				extracttime= 60*60,
 				size = 5, 
+				side= 2,
+				isAISpawned = true
+			}
+		},
+		assault = {
+			[1] = {
+				name='assault-squad-red',
+				type=PlayerLogistics.infantryTypes.assault, 
+				weight = 600,
+				cost= 600,
+				jobtime= 60*120,
+				extracttime= 0,
+				size = 6, 
+				side= 1,
+				isAISpawned = true
+			},
+			[2] = {
+				name='assault-squad',
+				type=PlayerLogistics.infantryTypes.assault, 
+				weight = 600,
+				cost= 600,
+				jobtime= 60*120,
+				extracttime= 60*60,
+				size = 6, 
 				side= 2,
 				isAISpawned = true
 			}
@@ -67,6 +91,7 @@ do
 	function GroupMonitor:new()
 		local obj = {}
 		obj.groups = {}
+		obj.supplySpawners = {}
 		setmetatable(obj, self)
 		self.__index = self
 		
@@ -82,7 +107,6 @@ do
 		if misType == ZoneCommand.missionTypes.strike then return true end
 		if misType == ZoneCommand.missionTypes.patrol then return true end
 		if misType == ZoneCommand.missionTypes.sead then return true end
-		if misType == ZoneCommand.missionTypes.bai then return true end
 	end
 
 	function GroupMonitor.hasWeapons(group)
@@ -143,6 +167,42 @@ do
 	end
 	
 	function GroupMonitor:start()
+        local ev = {}
+        ev.context = self
+        function ev:onEvent(event)
+            if not event.initiator or not event.initiator.getName or not event.initiator.getPoint then return end
+            if event.id==world.event.S_EVENT_DEAD or event.id==world.event.S_EVENT_CRASH then
+				local name = event.initiator:getName()
+				if name and self.context.supplySpawners[name] then
+					if math.random() <= Config.salvageChance then
+						local pos = event.initiator:getPoint()
+						local amount = self.context.supplySpawners[name]
+
+						local cname = DependencyManager.get('PlayerLogistics'):generateCargoName("Salvage")
+						local ctype = DependencyManager.get('PlayerLogistics'):getBoxType(amount)
+
+						local spos = {
+							x = pos.x + math.random(-15,15),
+							y = pos.z + math.random(-15,15)
+						}
+
+						Spawner.createCrate(cname, ctype, spos, 2, 1, 15, amount)
+
+						local origin = {
+							name='locally sourced', 
+							isCarrier=false, 
+							zone={ point=pos },
+							distToFront = 0
+						}
+
+						DependencyManager.get('PlayerLogistics').trackedBoxes[cname] = {name=cname, amount = amount, type=ctype, origin = origin, lifetime=60*60*2, isSalvage=true}
+					end
+				end
+			end
+        end
+
+		world.addEventHandler(ev)
+
 		timer.scheduleFunction(function(param, time)
 			local self = param.context
 			
@@ -200,13 +260,18 @@ do
 				elseif timer.getAbsTime() - group.lastStateTime > GroupMonitor.blockedDespawnTime then
 					env.info('GroupMonitor: processSurface ['..group.name..'] despawned due to blockage')
 					gr:destroy()
-					local todeliver = math.floor(group.product.cost)
-					z:addResource(todeliver)
+					StrategicAI.pushResource(group.product)
 					return true
 				end
 			end
 		elseif group.state =='enroute' then
 			if gr then
+				if group.product.missionType=='supply_convoy' then
+					for _,ssu in ipairs(gr:getUnits()) do
+						self.supplySpawners[ssu:getName()] = group.product.capacity/gr:getInitialSize()
+					end
+				end
+
 				local firstUnit = gr:getUnit(1):getName()
 				local z = ZoneCommand.getZoneOfUnit(firstUnit)
 				if not z then 
@@ -222,8 +287,9 @@ do
 						group.lastStateTime = timer.getAbsTime()
 						z:capture(gr:getCoalition())
 						local percentSurvived = gr:getSize()/gr:getInitialSize()
-						local todeliver = math.floor(group.product.cost * percentSurvived)
+						local todeliver = math.floor(group.product.capacity * percentSurvived)
 						z:addResource(todeliver)
+						z:pushMisOfType(group.product.missionType) 
 						env.info('GroupMonitor: processSurface ['..group.name..'] has supplied ['..z.name..'] with ['..todeliver..']')
 					elseif group.product.missionType == 'assault' then
 						if z.side == gr:getCoalition() then
@@ -231,15 +297,15 @@ do
 							group.state = 'atdestination'
 							group.lastStateTime = timer.getAbsTime()
 							local percentSurvived = gr:getSize()/gr:getInitialSize()
-							local torecover = math.floor(group.product.cost * percentSurvived * GroupMonitor.recoveryReduction)
-							z:addResource(torecover)
-							env.info('GroupMonitor: processSurface ['..z.name..'] has recovered ['..torecover..'] from ['..group.name..']')
+							z:pushMisOfType(group.product.missionType)
+							env.info('GroupMonitor: processSurface ['..z.name..'] has recovered mission ['..group.product.missionType..'] from ['..group.name..']')
 						elseif z.side == 0 then
 							env.info('GroupMonitor: processSurface ['..group.name..'] has arrived at destination')
 							group.state = 'atdestination'
 							group.lastStateTime = timer.getAbsTime()
 							z:capture(gr:getCoalition())
 							env.info('GroupMonitor: processSurface ['..group.name..'] has captured ['..z.name..']')
+							z:pushMisOfType(group.product.missionType) 
 						elseif z.side ~= gr:getCoalition() and z.side ~= 0  then
 							env.info('GroupMonitor: processSurface ['..group.name..'] starting siege')
 							group.state = 'siege'
@@ -403,12 +469,26 @@ do
 								end
 							end
 
+							if not group.spawnedSquad and group.target:hasEnemyDefense(gr:getCoalition()) then
+								local pos = gr:getUnit(1):getPoint()
+								local tgdist = mist.utils.get2DDist(pos, group.target.zone.point)
+								if tgdist < 500+group.target.zone.radius then
+									local squadData = GroupMonitor.aiSquads.assault[gr:getCoalition()]
+									local num = math.random(1,3)
+									for i=1,num do
+										DependencyManager.get("SquadTracker"):spawnInfantry(squadData, pos)
+										env.info('GroupMonitor: processSurface ['..group.name..'] has deployed '..squadData.type..' squad')
+									end
+									group.spawnedSquad = true
+								end
+							end
+
 							local timeElapsed = timer.getAbsTime() - group.lastStateTime
 							if not group.spawnedSquad and timeElapsed > GroupMonitor.timeBeforeSquadDeploy then
+								
 								local die = math.random()
 								if die < GroupMonitor.squadChance then
 									local pos = gr:getUnit(1):getPoint()
-
 									local squadData = nil
 									if math.random() > GroupMonitor.ambushChance then
 										squadData = GroupMonitor.aiSquads.manpads[gr:getCoalition()]
@@ -470,6 +550,22 @@ do
 									group.lastStateTime = timer.getAbsTime()
 									success = true
 									env.info('GroupMonitor: processSurface ['..group.name..'] detonating structure at '..z.name)
+									--trigger.action.outTextForCoalition(z.side, z.name..' is under attack by ground forces', 10)
+									
+									if z.side == 2 then
+										local sourcePos = {
+											x = z.zone.point.x,
+											y = 9144,
+											z = z.zone.point.z,
+										}
+
+										if math.random()>0.5 then
+											TransmissionManager.queueMultiple({'zones.names.'..z.name, 'zones.events.underattack.1'}, TransmissionManager.radios.command, sourcePos)
+										else
+											TransmissionManager.queueMultiple({'zones.events.underattack.2','zones.names.'..z.name}, TransmissionManager.radios.command, sourcePos)
+										end
+									end
+
 									break
 								end
 							end
@@ -487,6 +583,8 @@ do
 	end
 
 	function GroupMonitor.isStuck(group)
+		if Config.disableUnstuck then return false end
+		
 		local gr = Group.getByName(group.name)
 		if not gr then return false end
 		if gr:getSize() == 0 then return false end
@@ -536,7 +634,7 @@ do
 		
 		if group.state =='takeoff' then
 			if timer.getAbsTime() - group.lastStateTime > GroupMonitor.blockedDespawnTime then
-				if gr and gr:getSize()>0 and gr:getUnit(1):isExist() then
+				if gr and gr:getSize()>0 and gr:getUnit(1) and gr:getUnit(1):isExist() then
 					local frUnit = gr:getUnit(1)
 					local cz = CarrierCommand.getCarrierOfUnit(frUnit:getName())
 					if Utils.allGroupIsLanded(gr, cz ~= nil) then
@@ -549,8 +647,8 @@ do
 								z = CarrierCommand.getCarrierOfUnit(firstUnit)
 							end
 							if z then
-								z:addResource(group.product.cost)
-								env.info('GroupMonitor: processAir ['..z.name..'] has recovered ['..group.product.cost..'] from ['..group.name..']')
+								StrategicAI.pushResource(group.product)
+								env.info('GroupMonitor: processAir ['..z.name..'] has recovered resource from ['..group.name..']')
 							end
 						end
 
@@ -565,8 +663,14 @@ do
 			end
 		elseif group.state =='inair' then
 			if gr then
+				if group.product.missionType=='supply_air' then
+					for _,ssu in ipairs(gr:getUnits()) do
+						self.supplySpawners[ssu:getName()] = group.product.capacity/gr:getInitialSize()
+					end
+				end
+
 				local unit = gr:getUnit(1)
-				if not unit or not unit:isExist() then return end
+				if not unit or not unit.isExist or not unit:isExist() then return end
 				
 				local cz = CarrierCommand.getCarrierOfUnit(unit:getName())
 				if Utils.allGroupIsLanded(gr, cz ~= nil) then
@@ -584,15 +688,16 @@ do
 						if group.product.missionType == 'supply_air' then
 							if z then
 								z:capture(gr:getCoalition())
-								z:addResource(group.product.cost)
-								env.info('GroupMonitor: processAir ['..group.name..'] has supplied ['..z.name..'] with ['..group.product.cost..']')
+								z:addResource(group.product.capacity)
+								z:pushMisOfType(group.product.missionType) 
+								env.info('GroupMonitor: processAir ['..group.name..'] has supplied ['..z.name..'] with ['..group.product.capacity..']')
 							end
 						else
 							if z and z.side == gr:getCoalition() then
 								local percentSurvived = gr:getSize()/gr:getInitialSize()
 								local torecover = math.floor(group.product.cost * percentSurvived * GroupMonitor.recoveryReduction)
-								z:addResource(torecover)
-								env.info('GroupMonitor: processAir ['..z.name..'] has recovered ['..torecover..'] from ['..group.name..']')
+								z:pushMisOfType(group.product.missionType) 
+								env.info('GroupMonitor: processAir ['..z.name..'] has recovered product ['..group.product.missionType..'] from ['..group.name..']')
 							end
 						end
 					else
@@ -636,8 +741,10 @@ do
 									group.returning = nil
 									self:sendHome(group)
 								else
-									local homePos = group.home.zone.point
-									TaskExtensions.executeHeloCasMission(gr, group.target.built, group.product.expend, group.product.altitude, {homePos = homePos})
+									if group.target then
+										local homePos = group.home.zone.point
+										TaskExtensions.executeHeloCasMission(gr, group.target.built, group.product.expend, group.product.altitude, {homePos = homePos})
+									end
 								end
 								group.isengaging = false
 							end

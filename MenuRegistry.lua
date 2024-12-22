@@ -2,8 +2,11 @@
 MenuRegistry = {}
 
 do
+    MenuRegistry.triggers = {}
+    MenuRegistry.unitTriggers = {}
+
     MenuRegistry.menus = {}
-    function MenuRegistry:register(order, registerfunction, context)
+    function MenuRegistry.register(order, registerfunction, context)
         for i=1,order,1 do
             if not MenuRegistry.menus[i] then MenuRegistry.menus[i] = {func = function() end, context = {}} end
         end
@@ -13,24 +16,61 @@ do
 
     local ev = {}
     function ev:onEvent(event)
-        if event.id == world.event.S_EVENT_BIRTH and event.initiator and event.initiator.getPlayerName then
+        MenuRegistry.handleEvent(event)
+    end
+    
+    world.addEventHandler(ev)
+
+    function MenuRegistry.handleEvent(event)
+        if event.initiator and event.initiator.isExist and event.initiator:isExist() and event.initiator.getPlayerName and event.initiator:getPlayerName() then
+            env.info('MenuRegistry - playerevent type='..event.id)
+        end
+
+        if (event.id == world.event.S_EVENT_PLAYER_ENTER_UNIT or
+            event.id == world.event.S_EVENT_BIRTH) and event.initiator and event.initiator.isExist and event.initiator:isExist() and event.initiator.getPlayerName then
+
             local player = event.initiator:getPlayerName()
             if player then
-                env.info('MenuRegistry - creating menus for player: '..player)
-                for i,v in ipairs(MenuRegistry.menus) do
-                    local err, msg = pcall(v.func, event, v.context)
-                    if not err then
-                        env.info("MenuRegistry - ERROR :\n"..msg)
-                        env.info('Traceback\n'..debug.traceback())
+                local lastTrigger = MenuRegistry.triggers[player]
+                env.info('MenuRegistry - last trigger time '..tostring(lastTrigger)..' type='..event.id)
+                if not lastTrigger or (timer.getTime() - lastTrigger) > 1 then
+                    MenuRegistry.triggers[player] = timer.getTime()
+                    env.info('MenuRegistry - creating menus for player: '..player)
+                    for i,v in ipairs(MenuRegistry.menus) do
+                        local err, msg = pcall(v.func, event, v.context)
+                        if not err then
+                            env.info("MenuRegistry - ERROR :\n"..msg)
+                            env.info('Traceback\n'..debug.traceback())
+                        end
                     end
                 end
             end
         end
     end
-    
-    world.addEventHandler(ev)
 
-    function MenuRegistry.showTargetZoneMenu(groupid, name, action, targetside, minDistToFront, data, includeCarriers, onlyRevealed)
+    function MenuRegistry.triggerMenusForUnit(unit)
+        if unit:isExist() then
+            if unit.getPlayerName and unit:getPlayerName() then
+                local tr = MenuRegistry.unitTriggers[unit:getID()]
+                if not tr then
+                    local event = {
+                        initiator = unit,
+                        id = world.event.S_EVENT_PLAYER_ENTER_UNIT,
+                    }
+    
+                    MenuRegistry.handleEvent(event)
+                    MenuRegistry.unitTriggers[unit:getID()] = true
+                end
+            else
+                local tr = MenuRegistry.unitTriggers[unit:getID()]
+                if tr then
+                    MenuRegistry.unitTriggers[unit:getID()] = false
+                end
+            end
+        end
+    end
+
+    function MenuRegistry.showTargetZoneMenu(groupid, name, action, targetside, minDistToFront, data, includeCarriers, onlyRevealed,includeFarps)
 		local zones = ZoneCommand.getAllZones()
 
         if targetside and type(targetside) == 'number' then
@@ -50,6 +90,14 @@ do
 
         if includeCarriers then
             for i,v in pairs(CarrierCommand.getAllCarriers()) do
+                if not targetside or Utils.isInArray(v.side,targetside) then 
+                    table.insert(zns, v)
+                end
+            end
+        end
+
+        if includeFarps then
+            for i,v in pairs(FARPCommand.getAllFARPs()) do
                 if not targetside or Utils.isInArray(v.side,targetside) then 
                     table.insert(zns, v)
                 end

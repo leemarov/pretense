@@ -15,11 +15,33 @@ do
     end
 
     function Recon:isUnitTypeAllowed(unit)
-        return true
+        local tp = unit:getDesc().typeName
+        local st = ReconManager.getAircraftStats(tp)
+        return st.canRecon
     end
 
     function Recon:isInstantReward()
         return true
+    end
+
+    function Recon:createObjective()
+        self.completionType = Mission.completion_type.any
+        local description = ''
+
+        local zn1 = ZoneCommand.getZoneByName(self.target)
+
+        local recon = ObjReconZone:new()
+        recon:initialize(self, {
+            target = zn1,
+            failZones = {
+                [1] = {zn1}
+            }
+        })
+
+        table.insert(self.objectives, recon)
+        description = description..'   Observe enemies at '..zn1.name..'\n'
+
+        self.description = self.description..description
     end
 
     function Recon:generateObjectives()

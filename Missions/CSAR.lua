@@ -20,6 +20,10 @@ do
         end
     end
 
+    function CSAR:createObjective()
+        env.info("ERROR - Can't create CSAR on demand")
+    end
+
     function CSAR:generateObjectives()
         self.completionType = Mission.completion_type.all
         local description = ''

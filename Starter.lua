@@ -70,6 +70,8 @@ do
                     z:fullUpgrade()
                     z:boostProduction(math.random(1,200))
                 end
+            else
+                z:setSide(0)
             end
         end
     end
