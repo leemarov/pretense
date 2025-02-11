@@ -15,7 +15,7 @@ INIT_FP_SYRIA_MODERN := resources/init_syria_m.lua
 
 PRETENSE_COMPILE_FP := build/pretense_compiled.lua
 
-BUILD_COMMAND := python scripts/build.py $(MIST_FILEPATH) $(PRETENSE_COMPILE_FP)
+BUILD_COMMAND := python3 scripts/build.py $(MIST_FILEPATH) $(PRETENSE_COMPILE_FP)
 
 default: all
 
@@ -24,7 +24,7 @@ all: caucasus_modern syria_coldwar syria_modern
 
 .PHONY:$(PRETENSE_COMPILE_FP)
 $(PRETENSE_COMPILE_FP):
-	python scripts/recompile.py $(PRETENSE_COMPILE_FP)
+	python3 scripts/recompile.py $(PRETENSE_COMPILE_FP)
 
 
 .PHONY: caucasus_modern caucasus_modern_hot caucasus_modern_cold

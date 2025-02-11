@@ -100,8 +100,9 @@ Makes use of Mission scripting tools (Mist): <https://github.com/mrSkortch/Missi
 
 output = [x + '\n' for x in top_comment]
 
+lua_basedir = "lua/"
 for file in filelist:
-    with open(file, 'r') as f:
+    with open(lua_basedir + file, 'r') as f:
         output.append("\n")
         output.append(f"-----------------[[ {file} ]]-----------------\n")
         lines = f.readlines()

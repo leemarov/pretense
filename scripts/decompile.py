@@ -2,6 +2,7 @@ import os
 
 with open('pretense_compiled.lua', 'r') as f:
     lines = f.readlines()
+    lua_dir = "lua/"
     current_filename = ''
     file_lines = []
     for line in lines:
@@ -11,10 +12,10 @@ with open('pretense_compiled.lua', 'r') as f:
                     os.makedirs(os.path.dirname(current_filename), exist_ok=True)
                 with open(current_filename, 'w') as f_write:
                     f_write.writelines(file_lines)
-                    current_filename = ''
+                    current_filename = lua_dir
                     file_lines = []
             else:
-                current_filename = line.strip().strip('-[]').rstrip(']-').strip()
+                current_filename = lua_dir + line.strip().strip('-[]').rstrip(']-').strip()
                 print(f"{current_filename}")
         elif current_filename:
             file_lines.append(line)
