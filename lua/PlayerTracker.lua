@@ -808,7 +808,7 @@ do
             
             if isCallsignTaken(choice, self.config) then
                 for i=1,10,1 do
-                    choice = { name = callsigns[math.random(1,#PlayerTracker.callsigns)], num1=1, num2=1 }
+                    choice = { name = PlayerTracker.callsigns[math.random(1,#PlayerTracker.callsigns)], num1=1, num2=1 }
                     if not isCallsignTaken(choice, self.config) then
                         break
                     end

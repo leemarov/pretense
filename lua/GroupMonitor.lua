@@ -161,7 +161,7 @@ do
 	function GroupMonitor:registerGroup(product, target, home, savedData)
 		self.groups[product.name] = {name = product.name, lastStateTime = timer.getAbsTime(), product = product, target = target, home = home, stuck_marker = 0}
 
-		if savedData and savedData.state ~= 'uninitialized' then
+		if savedData and savedData.state and savedData.state ~= 'uninitialized' then
 			env.info('GroupMonitor - registerGroup ['..product.name..'] restored state '..savedData.state..' dur:'..savedData.lastStateDuration)
 			self.groups[product.name].state = savedData.state
 			self.groups[product.name].lastStateTime = timer.getAbsTime() - savedData.lastStateDuration

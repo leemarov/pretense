@@ -275,6 +275,7 @@ do
 			if not self.neighbours[target.name] then return false end
 			if DependencyManager.get("ConnectionManager"):isRoadBlocked(self.name, target.name) then return false end
 		elseif type=='transfer' and target.side == self.side then
+			if target.side ~= self.side then return false end
 			if not self.neighbours[target.name] then return false end
 		end
 
