@@ -20,5 +20,5 @@ jobs:
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v4.6.0
       with:
-        #name:
+        name: miz_files.zip
         path: build
