@@ -2,8 +2,7 @@ BUILD_DIR := ./build
 
 MIST_FILEPATH := resources/mist_4_5_121_custom.lua
 
-MIZ_FP_CAUCASUS_COLD := resources/miz/Pretense_caucasus_1.7.2.miz
-MIZ_FP_CAUCASUS_HOT := resources/miz/Pretense_hotstart_caucasus_1.7.2.miz
+MIZ_FP_CAUCASUS_DYNAMIC := resources/miz/Pretense_caucasus_2.0.miz
 MIZ_FP_SYRIA_COLDWAR_COLD := resources/miz/Pretense_syria_cw_1.7.2.miz
 MIZ_FP_SYRIA_COLDWAR_HOT := resources/miz/Pretense_hotstart_syria_cw_1.7.2.miz
 MIZ_FP_SYRIA_MODERN_COLD := resources/miz/Pretense_syria_m_1.7.2.miz
@@ -27,14 +26,8 @@ $(PRETENSE_COMPILE_FP):
 	python3 scripts/recompile.py $(PRETENSE_COMPILE_FP)
 
 
-.PHONY: caucasus_modern caucasus_modern_hot caucasus_modern_cold
-caucasus_modern: caucasus_modern_hot caucasus_modern_cold
-
-caucasus_modern_hot: $(PRETENSE_COMPILE_FP)
-	$(BUILD_COMMAND) $(MIZ_FP_CAUCASUS_HOT) $(INIT_FP_CAUCASUS)
-
-caucasus_modern_cold: $(PRETENSE_COMPILE_FP)
-	$(BUILD_COMMAND) $(MIZ_FP_CAUCASUS_COLD) $(INIT_FP_CAUCASUS)
+caucasus_modern: $(PRETENSE_COMPILE_FP)
+	$(BUILD_COMMAND) $(MIZ_FP_CAUCASUS_DYNAMIC) $(INIT_FP_CAUCASUS)
 
 
 .PHONY: syria_modern syria_modern_hot syria_modern_cold
