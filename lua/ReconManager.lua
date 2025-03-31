@@ -45,7 +45,7 @@ do
                             missionCommands.addCommandForGroup(groupid, 'Analyze', menu, Utils.log(context.analyzeData), context, groupname)
                             
                             if stats.uploadRate > 0 then
-                                missionCommands.addCommandForGroup(groupid, 'Upload', menu, Utils.log(context.uploadData), context, groupname)
+                                missionCommands.addCommandForGroup(groupid, 'Transmit & Analyze', menu, Utils.log(context.uploadData), context, groupname)
                             end
                         end
 
@@ -580,9 +580,9 @@ do
     end
 
     ReconManager.aircraftStats = {
-        ['A-10A'] =         { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45, },
-        ['A-10C'] =         { uploadRate = 0.8, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
-        ['A-10C_2'] =       { uploadRate = 1.6, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
+        ['A-10A'] =         { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
+        ['A-10C'] =         { uploadRate = 0, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
+        ['A-10C_2'] =       { uploadRate = 0, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
         ['A-4E-C'] =        { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         ['AJS37'] =         { uploadRate = 0,   precission=0.7, recon_speed = 10, minDist = 10, maxDeviation = 90 },
         ['AV8BNA'] =        { uploadRate = 0,   precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
@@ -591,13 +591,13 @@ do
         ['F-4E-45MC'] =     { uploadRate = 0,   precission=0.5, recon_speed = 5,  minDist = 5,  maxDeviation = 90 },
         ['F-14B'] =         { uploadRate = 0,   precission=0.5, recon_speed = 10, minDist = 5,  maxDeviation = 120 },
         ['F-15C'] =         { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
-        ['F-16C_50'] =      { uploadRate = 1.6, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
+        ['F-16C_50'] =      { uploadRate = 0, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
         ['F-5E-3'] =        { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         ['F-86F Sabre'] =   { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
-        ['FA-18C_hornet'] = { uploadRate = 1.6, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
+        ['FA-18C_hornet'] = { uploadRate = 0, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
         ['Hercules'] =      { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         ['J-11A'] =         { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
-        ['JF-17'] =         { uploadRate = 1.6, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
+        ['JF-17'] =         { uploadRate = 0, precission=0.5, recon_speed = 2,  minDist = 20, maxDeviation = 120 },
         ['L-39ZA'] =        { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         ['M-2000C'] =       { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         ['Mirage-F1BE'] =   { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
@@ -615,27 +615,38 @@ do
         ['Su-33'] =         { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         ['T-45'] =          { uploadRate = 0,   precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45 },
         
-        ['AH-64D_BLK_II'] = { uploadRate = 1.6, precission=0.3, recon_speed = 5,  minDist = 15, maxDeviation = 120 },
+        ['AH-64D_BLK_II'] = { uploadRate = 0, precission=0.3, recon_speed = 5,  minDist = 15, maxDeviation = 120 },
         ['Ka-50'] =         { uploadRate = 0,   precission=0.3, recon_speed = 5,  minDist = 15, maxDeviation = 35  },
         ['Ka-50_3'] =       { uploadRate = 0,   precission=0.3, recon_speed = 5,  minDist = 15, maxDeviation = 35  },
         ['Mi-24P'] =        { uploadRate = 0,   precission=0.5, recon_speed = 5,  minDist = 10, maxDeviation = 60  },
         ['Mi-8MT'] =        { uploadRate = 0,   precission=0.8, recon_speed = 1,  minDist = 5,  maxDeviation = 30  },
-        ['SA342L'] =        { uploadRate = 0,   precission=0.3, recon_speed = 5,  minDist = 10, maxDeviation = 120, canRecon=true },
-        ['SA342M'] =        { uploadRate = 0,   precission=0.2, recon_speed = 10, minDist = 15, maxDeviation = 120, canRecon=true },
-        ['SA342Minigun'] =  { uploadRate = 0,   precission=0.7, recon_speed = 3,  minDist = 5,  maxDeviation = 45, canRecon=true  },
+        ['SA342L'] =        { uploadRate = 1.6,   precission=0.3, recon_speed = 5,  minDist = 10, maxDeviation = 120, canRecon=true },
+        ['SA342M'] =        { uploadRate = 1.6,   precission=0.2, recon_speed = 10, minDist = 15, maxDeviation = 120, canRecon=true },
+        ['SA342Minigun'] =  { uploadRate = 1.6,   precission=0.7, recon_speed = 3,  minDist = 5,  maxDeviation = 45, canRecon=true  },
         ['UH-1H'] =         { uploadRate = 0,   precission=0.8, recon_speed = 1,  minDist = 5,  maxDeviation = 30  },
         ['UH-60L'] =        { uploadRate = 0,   precission=0.8, recon_speed = 1,  minDist = 8,  maxDeviation = 45  },
-        ['OH-6A'] =         { uploadRate = 0,   precission=0.8, recon_speed = 3,  minDist = 8,  maxDeviation = 45, canRecon=true  },
+        ['OH-6A'] =         { uploadRate = 1.6,   precission=0.8, recon_speed = 3,  minDist = 8,  maxDeviation = 45, canRecon=true  },
         ['OH58D'] =         { uploadRate = 5,   precission=0.1, recon_speed = 10, minDist = 15, maxDeviation = 190, canRecon=true },
         ['CH-47Fbl1'] =        { uploadRate = 0,   precission=0.8, recon_speed = 1,  minDist = 5,  maxDeviation = 30  },
-
-        ['M 818'] = 				{ uploadRate = 0,     precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45  },
-        ['M-2 Bradley'] = 			{ uploadRate = 1.6,   precission=0.5, recon_speed = 2,  minDist = 5,  maxDeviation = 45  },
-        ['M6 Linebacker'] = 		{ uploadRate = 1.6,   precission=0.5, recon_speed = 2,  minDist = 5,  maxDeviation = 45  },
-        ['M-113'] = 				{ uploadRate = 0,     precission=1.0, recon_speed = 1,  minDist = 5,  maxDeviation = 45  },
-        ['MaxxPro_MRAP'] = 			{ uploadRate = 1.6,   precission=0.8, recon_speed = 5,  minDist = 5,  maxDeviation = 45  },
-        ['M1043 HMMWV Armament'] = 	{ uploadRate = 1.6,   precission=0.3, recon_speed = 10, minDist = 5,  maxDeviation = 45  },
-        ['Land_Rover_101_FC'] = 	{ uploadRate = 0,     precission=0.8, recon_speed = 1,  minDist = 5,  maxDeviation = 45  },
+        
+        ['M 818'] = 	            { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['Land_Rover_101_FC'] = 	{ uploadRate = 0,   precission=0.8, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['M-2 Bradley'] = 	        { uploadRate = 0,   precission=0.5, recon_speed = 2, minDist = 5,  maxDeviation = 45 },
+        ['M6 Linebacker'] = 	    { uploadRate = 0,   precission=0.5, recon_speed = 2, minDist = 5,  maxDeviation = 45 },
+        ['M-113'] = 	            { uploadRate = 1.6, precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45, canRecon=true  },
+        ['MLRS'] = 	                { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['M-109'] = 	            { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['M1A2C_SEP_V3'] = 	        { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['M-60'] = 	                { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['MaxxPro_MRAP'] = 	        { uploadRate = 1.6, precission=0.8, recon_speed = 5, minDist = 5,  maxDeviation = 45, canRecon=true  },
+        ['M1043 HMMWV Armament'] = 	{ uploadRate = 1.6, precission=0.3, recon_speed = 10, minDist = 5,  maxDeviation = 45, canRecon=true  },
+        ['M1097 Avenger'] = 	    { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['Gepard'] = 	            { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['VAB_Mephisto'] = 	        { uploadRate = 0,   precission=0.5, recon_speed = 2, minDist = 5,  maxDeviation = 45 },
+        ['MCV-80'] = 	            { uploadRate = 0,   precission=0.5, recon_speed = 2, minDist = 5,  maxDeviation = 45 },
+        ['Marder'] = 	            { uploadRate = 0,   precission=0.5, recon_speed = 2, minDist = 5,  maxDeviation = 45 },
+        ['Roland ADS'] = 	        { uploadRate = 0,   precission=1.0, recon_speed = 1, minDist = 5,  maxDeviation = 45  },
+        ['M1045 HMMWV TOW'] = 	    { uploadRate = 1.6, precission=0.3, recon_speed = 10, minDist = 5,  maxDeviation = 45, canRecon=true  }
     }
 end
 

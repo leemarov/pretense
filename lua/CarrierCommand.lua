@@ -14,7 +14,9 @@ do
 		awacs = 'AWACS',
 		tanker = 'Tanker',
 		transport = 'Transport',
-		mslstrike = 'Cruise Missiles'
+		mslstrike = 'Cruise Missiles',
+		sead = 'SEAD',
+		recon = 'Recon'
 	}
 
 	CarrierCommand.supportStates = {
@@ -24,9 +26,9 @@ do
 		none = 'none'
 	}
 
-	CarrierCommand.blockedDespawnTime = 10*60
+	CarrierCommand.blockedDespawnTime = 15*60
 	CarrierCommand.recoveryReduction = 0.8
-	CarrierCommand.landedDespawnTime = 10
+	CarrierCommand.landedDespawnTime = 2*60
     
     function CarrierCommand:new(name, range, navmap, radioConfig, maxResource)
         local unit = Unit.getByName(name)
@@ -45,6 +47,7 @@ do
 		obj.supportFlights = {}
 		obj.extraSupports = {}
 		obj.weaponStocks = {}
+		obj.distToFront = 10
 		
 		obj.navigation = {
 			currentWaypoint = nil,
@@ -64,6 +67,8 @@ do
 		CarrierCommand.currentIndex = CarrierCommand.currentIndex + 1
 
         local point = unit:getPoint()
+
+		obj.zone = { point = point }
 
         local color = {0.7,0.7,0.7,0.3}
 		if obj.side == 1 then
@@ -109,7 +114,7 @@ do
 			self:updateNavigation()
 			self:updateSupports()
             self:refreshText()
-            return time+10
+			return time+10
         end, {context = self}, timer.getTime()+1)
     end
 
@@ -142,6 +147,7 @@ do
 	local function isAttack(group)
 		if group.type == CarrierCommand.supportTypes.cap then return true end
 		if group.type == CarrierCommand.supportTypes.strike then return true end
+		if group.type == CarrierCommand.supportTypes.sead then return true end
 	end
 
 	local function hasWeapons(group)
@@ -269,6 +275,21 @@ do
 							local point = carrier:getPoint()
 							TaskExtensions.landAtPointFromAir(gr,  {x=point.x, y=point.z}, group.altitude)
 							env.info('CarrierCommand: processAir ['..group.name..'] returning home due to invalid target')
+						end
+					elseif group.type == CarrierCommand.supportTypes.recon then
+						local pos = frUnit:getPoint()
+						local closestZn, dist = ZoneCommand.getClosestZoneToPoint(pos, Utils.getEnemy(self.side))
+						if closestZn and closestZn.revealTime == 0 and dist<=12000 then
+							closestZn:reveal()
+							DependencyManager.get("ReconManager"):revealEnemyInZone(closestZn, nil, Utils.getEnemy(self.side), 0.3)
+							env.info('CarrierCommand: processAir ['..group.name..'] revealed ['..closestZn.name..']')
+						end
+
+						if not group.returning and group.target.revealTime > 0 then
+							group.returning = true
+							local point = carrier:getPoint()
+							TaskExtensions.landAtPointFromAir(gr,  {x=point.x, y=point.z}, group.altitude)
+							env.info('CarrierCommand: processAir ['..group.name..'] returning home due to completed objective')
 						end
 					end
 				end
@@ -448,6 +469,12 @@ do
 		elseif data.type == CarrierCommand.supportTypes.transport then
 			targetCoalition = {0,2}
 			includeFarps = true
+			includeCarriers = true
+		elseif data.type == CarrierCommand.supportTypes.sead then
+			targetCoalition = 1
+			minDistToFront = 2
+		elseif data.type == CarrierCommand.supportTypes.recon then
+			targetCoalition = 1
 		end
 		
 		local success = MenuRegistry.showTargetZoneMenu(playerGroup:getID(), "Select "..data.name..'('..data.type..") target", function(params)
@@ -497,24 +524,43 @@ do
 			data.state = saveData.state
 			data.lastStateTime = timer.getAbsTime() - saveData.lastStateDuration
 			data.returning = saveData.returning
+
+			if data.returning then
+				timer.scheduleFunction(function(param)
+					local gr = Group.getByName(param.data.name)
+					local homePos = nil
+					local carrier = Unit.getByName(param.data.carrier.name)
+					if carrier then
+						homePos = carrier:getPoint()
+					end
+
+					TaskExtensions.landAtPointFromAir(gr, {x=homePos.x, y=homePos.z}, param.data.altitude)
+				end, {data = data}, timer.getTime()+1)
+				return
+			end
 		else
 			mist.respawnGroup(data.name, true)
 		end
 
 		if data.type == CarrierCommand.supportTypes.strike then
-			CarrierCommand.dispatchStrike(data, saveData~=nil)
+			CarrierCommand.dispatchStrike(data, saveData)
 		elseif data.type == CarrierCommand.supportTypes.cap then
-			CarrierCommand.dispatchCap(data, saveData~=nil)
+			CarrierCommand.dispatchCap(data, saveData)
 		elseif data.type == CarrierCommand.supportTypes.awacs then
-			CarrierCommand.dispatchAwacs(data, saveData~=nil)
+			CarrierCommand.dispatchAwacs(data, saveData)
 		elseif data.type == CarrierCommand.supportTypes.tanker then
-			CarrierCommand.dispatchTanker(data, saveData~=nil)
+			CarrierCommand.dispatchTanker(data, saveData)
 		elseif data.type == CarrierCommand.supportTypes.transport then
-			CarrierCommand.dispatchTransport(data, saveData~=nil)
+			CarrierCommand.dispatchTransport(data, saveData)
+		elseif data.type == CarrierCommand.supportTypes.sead then
+			CarrierCommand.dispatchSead(data, saveData)
+		elseif data.type == CarrierCommand.supportTypes.recon then
+			CarrierCommand.dispatchRecon(data, saveData)
 		end
 	end
 
-	function CarrierCommand.dispatchStrike(data, isReactivated)
+	function CarrierCommand.dispatchStrike(data, saveData)
+		local isReactivated = saveData ~= nil
 		timer.scheduleFunction(function(param)
 			local gr = Group.getByName(param.data.name)
 			local homePos = nil
@@ -542,7 +588,45 @@ do
 		end, {data = data}, timer.getTime()+1)
 	end
 
-	function CarrierCommand.dispatchCap(data, isReactivated)
+	function CarrierCommand.dispatchSead(data, saveData)
+		local isReactivated = saveData ~= nil
+		timer.scheduleFunction(function(param)
+			local gr = Group.getByName(param.data.name)
+
+			local homePos = nil
+			local carrier = Unit.getByName(param.data.carrier.name)
+			if carrier and isReactivated  then
+				homePos = { homePos = carrier:getPoint() }
+			end
+
+            TaskExtensions.executeSeadMission(gr, param.data.target.built, AI.Task.WeaponExpend.ALL, param.data.altitude, param.homePos, carrier:getID())
+		end, {data = data}, timer.getTime()+1)
+	end
+
+	function CarrierCommand.dispatchRecon(data, saveData)
+		local isReactivated = saveData ~= nil
+		timer.scheduleFunction(function(param)
+			local gr = Group.getByName(param.data.name)
+			local homePos = nil
+			local carrier = Unit.getByName(param.data.carrier.name)
+			if carrier and isReactivated then
+				homePos = { homePos = carrier:getPoint() }
+			end
+			env.info('CarrierCommand - sending '..param.data.name..' to '..param.data.target.name)
+
+			local point = nil
+			if param.data.target.isCarrier then
+				point = Unit.getByName(param.data.target.name):getPoint()
+			else
+				point = trigger.misc.getZone(param.data.target.name).point
+			end
+
+			TaskExtensions.overFlyPointAndReturn(gr, point, param.data.altitude, homePos, carrier:getID())
+		end, {data = data}, timer.getTime()+1)
+	end
+
+	function CarrierCommand.dispatchCap(data, saveData)
+		local isReactivated = saveData ~= nil
 		timer.scheduleFunction(function(param)
 			local gr = Group.getByName(param.data.name)
 
@@ -563,7 +647,8 @@ do
 		end, {data = data}, timer.getTime()+1)
 	end
 
-	function CarrierCommand.dispatchAwacs(data, isReactivated)		
+	function CarrierCommand.dispatchAwacs(data, saveData)		
+		local isReactivated = saveData ~= nil
 		timer.scheduleFunction(function(param)
 			local gr = Group.getByName(param.data.name)
 
@@ -590,7 +675,8 @@ do
 		end, {data = data}, timer.getTime()+1)
 	end
 
-	function CarrierCommand.dispatchTanker(data, isReactivated)
+	function CarrierCommand.dispatchTanker(data, saveData)
+		local isReactivated = saveData ~= nil
 		timer.scheduleFunction(function(param)
 			local gr = Group.getByName(param.data.name)
 
@@ -617,7 +703,8 @@ do
 		end, {data = data}, timer.getTime()+1)
 	end
 
-	function CarrierCommand.dispatchTransport(data, isReactivated)
+	function CarrierCommand.dispatchTransport(data, saveData)
+		local isReactivated = saveData ~= nil
 		timer.scheduleFunction(function(param)
 			local gr = Group.getByName(param.data.name)
 
@@ -630,15 +717,21 @@ do
 				supplyPoint = param.data.target.zone
 			end
 			
-			local point = { x=supplyPoint.point.x, y = supplyPoint.point.z}
-			TaskExtensions.landAtPoint(gr, point, param.data.altitude, true)
+			if param.data.target.isCarrier then
+				local tgt = Unit.getByName(param.data.target.name)
+				trigger.action.outText('sending ',5)
+				TaskExtensions.landAtShip(gr, tgt, param.data.altitude, true)
+			else
+				local point = { x=supplyPoint.point.x, y = supplyPoint.point.z}
+				TaskExtensions.landAtPoint(gr, point, param.data.altitude, true)
+			end
 		end, {data = data}, timer.getTime()+1)
 	end
 
 	function CarrierCommand:showInformation(groupname)
 		local gr = Group.getByName(groupname)
         if gr then 
-			local msg = '['..self.name..']'
+			local msg = '['..self.name..'] ('..self.resource..')'
 			if self.radio then msg = msg..'\n Radio: '..string.format('%.3f',self.radio/1000000)..' AM' end
 			if self.tacan then msg = msg..'\n TACAN: '..self.tacan.channel..'X ('..self.tacan.callsign..')' end
 			if self.link4 then msg = msg..'\n Link4: '..string.format('%.3f',self.link4/1000000) end
@@ -756,8 +849,11 @@ do
         local point = unit:getPoint()
         trigger.action.setMarkupPositionStart(3000+self.index, point)
 
+		self.zone.point = point
+
         point.z = point.z + self.range
         trigger.action.setMarkupPositionStart(2000+self.index, point)
+		
     end
 
     function CarrierCommand:capture(side)

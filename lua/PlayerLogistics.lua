@@ -26,22 +26,31 @@ do
 	PlayerLogistics.allowedTypes['M-113'] = 				{ isCA = true, supplies = false, sling=true, personCapacity = 12, boxCapacity=1}
 	PlayerLogistics.allowedTypes['MaxxPro_MRAP'] = 			{ isCA = true, supplies = false, sling=true, personCapacity = 10, boxCapacity=1}
 	PlayerLogistics.allowedTypes['M1043 HMMWV Armament'] = 	{ isCA = true, supplies = false, sling=true, personCapacity = 6, boxCapacity=1}
+	PlayerLogistics.allowedTypes['M1045 HMMWV TOW'] = 		{ isCA = true, supplies = false, sling=true, personCapacity = 6, boxCapacity=1}
 	PlayerLogistics.allowedTypes['Land_Rover_101_FC'] = 	{ isCA = true, supplies = false, sling=true, personCapacity = 4, boxCapacity=2}
+	PlayerLogistics.allowedTypes['Marder'] = 				{ isCA = true, supplies = false, sling=true, personCapacity = 6, boxCapacity=1}
+	PlayerLogistics.allowedTypes['MCV-80'] = 				{ isCA = true, supplies = false, sling=true, personCapacity = 7, boxCapacity=2}
+	PlayerLogistics.allowedTypes['VAB_Mephisto'] = 			{ isCA = true, supplies = false, sling=true, personCapacity = 6, boxCapacity=1}
 
 	PlayerLogistics.groundVehicles = {
 		['truck'] = 	{ price =  100, template='player-truck',  		label='truck', isCW = true },
 		['truck2'] = 	{ price =  50, 	template='player-truck-small',  label='truck', isCW = true },
-		['brad'] = 		{ price = 1500, template='player-brad',  		label='ifv'},
-		['bradaa'] = 	{ price = 2000, template='player-bradaa',  		label='ifv'   },
-		['mlrs'] = 		{ price = 3500, template='player-mlrs', 		label='arty'  },
-		['abrams'] = 	{ price = 2500, template='player-abrams', 		label='tank'  },
-		['mrap'] = 		{ price = 1000, template='player-mrap',  		label='apc'   },
-		['hmvaa'] = 	{ price = 1500, template='player-hmaa',  		label='sam'   },
-		['patton'] = 	{ price = 2000, template='player-m60', 			label='tank', 	isCW = true  },
-		['m113'] = 		{ price = 1000, template='player-m113',  		label='apc', 	isCW = true   },
-		['hmv'] = 		{ price = 500, 	template='player-hm',  			label='sup', 	isCW = true   },
-		['gepard'] =	{ price = 1500, template='player-gepard',  		label='aaa', 	isCW = true   },
-		['arty'] = 		{ price = 2500, template='player-arty', 		label='arty', 	isCW = true  }
+		['hmv'] = 		{ price = 300, 	template='player-hm',  			label='sup', 	isCW = true   },
+		['hmvat'] = 	{ price = 350, 	template='player-hmat',  		label='sup'  },
+		['m113'] = 		{ price = 400, template='player-m113',  		label='apc', 	isCW = true   },
+		['mrap'] = 		{ price = 600, template='player-mrap',  		label='apc'   },
+		['marder'] = 	{ price = 800, template='player-marder', 		label='apc', 	isCW = true  },
+		['warrior'] = 	{ price = 1500, template='player-warrior', 		label='ifv', 	isCW = true  },
+		['brad'] = 		{ price = 2500, template='player-brad',  		label='ifv'	  },
+		['mephisto'] = 	{ price = 2500, template='player-mephisto', 	label='apc',  },
+		['hmvaa'] = 	{ price = 2500, template='player-hmaa',  		label='sam'   },
+		['bradaa'] = 	{ price = 2700, template='player-bradaa',  		label='ifv'   },
+		['gepard'] =	{ price = 3500, template='player-gepard',  		label='aaa', 	isCW = true   },
+		['roland'] = 	{ price = 5000, template='player-roland', 		label='sam',  },
+		['arty'] = 		{ price = 1500, template='player-arty', 		label='arty', 	isCW = true  },
+		['mlrs'] = 		{ price = 3000, template='player-mlrs', 		label='arty'  },
+		['abrams'] = 	{ price = 5000, template='player-abrams', 		label='tank'  },
+		['patton'] = 	{ price = 4000, template='player-m60', 			label='tank', 	isCW = true  },
 	}
 
 	PlayerLogistics.startingMP = 10800
@@ -56,6 +65,11 @@ do
 		['weapons.bombs.IFV M2A2 Bradley [34720lb]'] = 				{ tag='brad', hasChute=false},
 		['weapons.bombs.Transport M818 [16000lb]'] = 				{ tag='truck', hasChute=false},
 		['weapons.bombs.SAM LINEBACKER [34720lb]'] = 				{ tag='bradaa', hasChute=false},
+		['weapons.bombs.IFV MARDER [34720lb]'] = 					{ tag='marder', hasChute=false},
+		['weapons.bombs.IFV MCV-80 [34720lb]'] = 					{ tag='warrior', hasChute=false},
+		['weapons.bombs.SAM ROLAND LN [34720lb]'] = 				{ tag='roland', hasChute=false},
+		['weapons.bombs.ATGM M1045 HMMWV TOW Skid [7073lb]'] = 		{ tag='hmvat', hasChute=false},
+		['weapons.bombs.ATGM M1045 HMMWV TOW Air [7189lb]'] = 		{ tag='hmvat', hasChute=true},
 	}
 
 	PlayerLogistics.infantryTypes = {
@@ -620,12 +634,14 @@ do
 
 				table.sort(sortedop, function(a,b) return a.name < b.name end)
 
-				local m = ''
+				local m = 'Available to spawn:\n'
 				for i,v in pairs(sortedop) do
-					m = m..'\nspawn:'..v.name..' ['..v.price..']'
+					if v.price <= z.resource then
+						m = m..'\nspawn:'..v.name..' ['..v.price..']'
+					end
 				end
 
-				trigger.action.outText(m,10)
+				trigger.action.outText(m, 15)
 				return false
 			end
 
@@ -824,7 +840,7 @@ do
 	end
 
 	function PlayerLogistics:awardSupplyXP(lastLoad, zone, unit, amount)
-		if lastLoad and zone.name~=lastLoad.name and not zone.isCarrier and not lastLoad.isCarrier then
+		if lastLoad and zone.name~=lastLoad.name then
 			if unit and unit.isExist and unit:isExist() and unit.getPlayerName then
 				local player = unit:getPlayerName()
 				local xp = amount*RewardDefinitions.actions.supplyRatio
@@ -984,14 +1000,14 @@ do
 			if not PlayerLogistics.allowedTypes[un:getDesc().typeName] then return false end
 			if not PlayerLogistics.allowedTypes[un:getDesc().typeName].boxCapacity then return false end
 			if self:getOccupiedPersonCapacity(groupname) > 0 then return false end
-			if self.carriedCargo[gr:getID()] and self.carriedCargo[gr:getID()] > 0 then return 0 end
+			if self.carriedCargo[gr:getID()] and self.carriedCargo[gr:getID()] > 0 then return false end
 
 			local carried = 0
 			if self.carriedBoxes[gr:getID()] then
 				carried = #self.carriedBoxes[gr:getID()]
 			end
 			
-			return carried  < PlayerLogistics.allowedTypes[un:getDesc().typeName].boxCapacity
+			return carried < PlayerLogistics.allowedTypes[un:getDesc().typeName].boxCapacity
 		end
 	end
 
@@ -2316,12 +2332,7 @@ do
 			local un = gr:getUnit(1)
 			if un then
 				if not self:canFitCargo(groupName) then
-					trigger.action.outTextForUnit(un:getID(), 'Can not load cargo. Personnel onboard.', 10)
-					return
-				end
-
-				if not self:canFitBoxes(groupName) then
-					trigger.action.outTextForUnit(un:getID(), 'Can not load cargo. Boxes onboard.', 10)
+					trigger.action.outTextForUnit(un:getID(), 'Can not load cargo. Personnel or boxes already onboard.', 10)
 					return
 				end
 

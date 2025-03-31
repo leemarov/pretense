@@ -73,7 +73,7 @@ do
         end
     end
 
-    function MenuRegistry.showTargetZoneMenu(groupid, name, action, targetside, minDistToFront, data, includeCarriers, onlyRevealed,includeFarps)
+    function MenuRegistry.showTargetZoneMenu(groupid, name, action, targetside, minDistToFront, data, includeCarriers, onlyRevealed,includeFarps, excludeZones)
 		local zones = ZoneCommand.getAllZones()
 
         if targetside and type(targetside) == 'number' then
@@ -81,11 +81,13 @@ do
         end
 
         local zns = {}
-        for i,v in pairs(zones) do
-            if not targetside or Utils.isInArray(v.side,targetside) then 
-                if not minDistToFront or v.distToFront <= minDistToFront then
-                    if not onlyRevealed or v.revealTime>0 then
-                        table.insert(zns, v)
+        if not excludeZones then
+            for i,v in pairs(zones) do
+                if not targetside or Utils.isInArray(v.side,targetside) then 
+                    if not minDistToFront or v.distToFront <= minDistToFront then
+                        if not onlyRevealed or v.revealTime>0 then
+                            table.insert(zns, v)
+                        end
                     end
                 end
             end

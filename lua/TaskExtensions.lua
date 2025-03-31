@@ -130,7 +130,7 @@ do
 		return defwp
 	end
 
-	function TaskExtensions.executeSeadMission(group,targets, expend, altitude, reactivated)
+	function TaskExtensions.executeSeadMission(group,targets, expend, altitude, reactivated, landUnitID)
 		if not group then return end
 		if not group:isExist() or group:getSize()==0 then return end
 		local startPos = group:getUnit(1):getPoint()
@@ -187,10 +187,31 @@ do
 			firstunitpos = Unit.getByName(tgt):getPoint()
 		end
 		
-		local mis = TaskExtensions.getDefaultWaypoints(startPos, attack, firstunitpos, reactivated)
+		local mis = TaskExtensions.getDefaultWaypoints(startPos, attack, firstunitpos, reactivated, landUnitID)
 
 		group:getController():setTask(mis)
 		TaskExtensions.setDefaultAG(group)
+	end
+
+	function TaskExtensions.overFlyPointAndReturn(group, targetPos, altitude, reactivated, landUnitID)
+		if not group then return end
+		if not group:isExist() or group:getSize()==0 then return end
+		local startPos = group:getUnit(1):getPoint()
+
+		if reactivated then
+			reactivated.currentPos = startPos
+			startPos = reactivated.homePos
+		end
+
+		local alt = 4572
+		if altitude then
+			alt = altitude/3.281
+		end
+
+		local mis = TaskExtensions.getDefaultWaypoints(startPos, nil, targetPos, reactivated, landUnitID)
+
+		group:getController():setTask(mis)
+		TaskExtensions.setDefaultAA(group)
 	end
 
 	function TaskExtensions.executeStrikeMission(group, targets, expend, altitude, reactivated, landUnitID)
@@ -1439,6 +1460,58 @@ do
 			alt = alt,
 			alt_type = atype, 
 			task = land
+		})
+		
+		group:getController():setTask(mis)
+	end
+
+	function TaskExtensions.landAtShip(group, ship, alt, skiptakeoff)
+		if not group then return end
+		if not group:isExist() or group:getSize()==0 then return end
+		local startPos = group:getUnit(1):getPoint()
+
+		local atype = AI.Task.AltitudeType.RADIO
+		if alt then
+			atype = AI.Task.AltitudeType.BARO
+		else
+			alt = 500
+		end
+
+		local mis = {
+			id='Mission',
+			params = {
+				route = {
+					airborne = true,
+					points = {}
+				}  
+			}
+		}
+
+		if not skiptakeoff then
+			table.insert(mis.params.route.points,{
+				type = AI.Task.WaypointType.TAKEOFF,
+				x = startPos.x,
+				y = startPos.z,
+				speed = 0,
+				action = AI.Task.TurnMethod.FIN_POINT,
+				alt = alt,
+				alt_type = atype
+			})
+		end
+
+
+		local landpos = ship:getPoint()
+
+		table.insert(mis.params.route.points, {
+			type= AI.Task.WaypointType.LAND,
+			linkUnit = ship:getID(),
+			helipadId = ship:getID(),
+			x = landpos.x,
+			y = landpos.z,
+			speed = 257,
+			action = AI.Task.TurnMethod.FIN_POINT,
+			alt = 0,
+			alt_type = AI.Task.AltitudeType.RADIO
 		})
 		
 		group:getController():setTask(mis)

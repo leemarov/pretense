@@ -251,9 +251,9 @@ do
 
 	function ZoneCommand:canSupply(target, type, amount)
 		if target.side~=0 and self.side ~= target.side then return false end
-
+		
 		if self:criticalOnSupplies() then return false end
-
+		
 		--if self.resource - amount <= self.spendTreshold then return false end
 
 		if target.side ~= 0 then
@@ -274,11 +274,11 @@ do
 		elseif type=='convoy' then
 			if not self.neighbours[target.name] then return false end
 			if DependencyManager.get("ConnectionManager"):isRoadBlocked(self.name, target.name) then return false end
-		elseif type=='transfer' and target.side == self.side then
+		elseif type=='transfer' then
 			if target.side ~= self.side then return false end
 			if not self.neighbours[target.name] then return false end
 		end
-
+		
 		return true
 	end
 
@@ -427,8 +427,15 @@ do
 	function ZoneCommand:setSide(side)
 		self.side = side
 
-		if side == 0 then
+		if self.side == 0 then
 			self.revealTime = 0
+			
+			self.resource = 0
+			self.extraBuildResources = 0
+			self.sabotageDebt = 0
+			self.mode = 'normal'
+			self.currentBuild = nil
+			self.currentMissionBuild = nil
 		end
 
 		local color = {0.7,0.7,0.7,0.3}
@@ -681,10 +688,6 @@ do
 				end
 
 				self:setSide(0)
-				self.sabotageDebt = 0
-				self.mode = 'normal'
-				self.currentBuild = nil
-				self.currentMissionBuild = nil
 			end
 			
 			--sell defenses if export mode

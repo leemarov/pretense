@@ -886,17 +886,17 @@ do
     PlayerTracker.ranks[2] =  { rank=2,  name='E-2 Airman',                 requiredXP = 2000,     cmdChance = 0,       cmdAward=0,     cmdTrys=0}
     PlayerTracker.ranks[3] =  { rank=3,  name='E-3 Airman first class',     requiredXP = 4500,     cmdChance = 0,       cmdAward=0,     cmdTrys=0}
     PlayerTracker.ranks[4] =  { rank=4,  name='E-4 Senior airman',          requiredXP = 7700,     cmdChance = 0,       cmdAward=0,     cmdTrys=0}
-    PlayerTracker.ranks[5] =  { rank=5,  name='E-5 Staff sergeant',         requiredXP = 11800,    cmdChance = 0.01,    cmdAward=1,     cmdTrys=1, allowCarrierCommand=true}
-    PlayerTracker.ranks[6] =  { rank=6,  name='E-6 Technical sergeant',     requiredXP = 17000,    cmdChance = 0.01,    cmdAward=5,     cmdTrys=10, allowCarrierCommand=true}
-    PlayerTracker.ranks[7] =  { rank=7,  name='E-7 Master sergeant',        requiredXP = 23500,    cmdChance = 0.03,    cmdAward=5,     cmdTrys=10, allowCarrierCommand=true}
-    PlayerTracker.ranks[8] =  { rank=8,  name='E-8 Senior master sergeant', requiredXP = 31500,    cmdChance = 0.06,    cmdAward=10,    cmdTrys=10, allowCarrierCommand=true}
-    PlayerTracker.ranks[9] =  { rank=9,  name='E-9 Chief master sergeant',  requiredXP = 42000,    cmdChance = 0.10,    cmdAward=10,    cmdTrys=10, allowCarrierCommand=true}
-    PlayerTracker.ranks[10] = { rank=10, name='O-1 Second lieutenant',      requiredXP = 52800,    cmdChance = 0.14,    cmdAward=20,    cmdTrys=15, allowCarrierSupport=true, allowCarrierCommand=true}
-    PlayerTracker.ranks[11] = { rank=11, name='O-2 First lieutenant',       requiredXP = 66500,    cmdChance = 0.20,    cmdAward=20,    cmdTrys=15, allowCarrierSupport=true, allowCarrierCommand=true}
-    PlayerTracker.ranks[12] = { rank=12, name='O-3 Captain',                requiredXP = 82500,    cmdChance = 0.27,    cmdAward=25,    cmdTrys=15, allowCarrierSupport=true, allowCarrierCommand=true}
-    PlayerTracker.ranks[13] = { rank=13, name='O-4 Major',                  requiredXP = 101000,   cmdChance = 0.34,    cmdAward=25,    cmdTrys=20, allowCarrierSupport=true, allowCarrierCommand=true}
-    PlayerTracker.ranks[14] = { rank=14, name='O-5 Lieutenant colonel',     requiredXP = 122200,   cmdChance = 0.43,    cmdAward=25,    cmdTrys=20, allowCarrierSupport=true, allowCarrierCommand=true}
-    PlayerTracker.ranks[15] = { rank=15, name='O-6 Colonel',                requiredXP = 146300,   cmdChance = 0.52,    cmdAward=30,    cmdTrys=20, allowCarrierSupport=true, allowCarrierCommand=true}
+    PlayerTracker.ranks[5] =  { rank=5,  name='E-5 Staff sergeant',         requiredXP = 11800,    cmdChance = 0.01,    cmdAward=1,     cmdTrys=1}
+    PlayerTracker.ranks[6] =  { rank=6,  name='E-6 Technical sergeant',     requiredXP = 17000,    cmdChance = 0.01,    cmdAward=5,     cmdTrys=10}
+    PlayerTracker.ranks[7] =  { rank=7,  name='E-7 Master sergeant',        requiredXP = 23500,    cmdChance = 0.03,    cmdAward=5,     cmdTrys=10}
+    PlayerTracker.ranks[8] =  { rank=8,  name='E-8 Senior master sergeant', requiredXP = 31500,    cmdChance = 0.06,    cmdAward=10,    cmdTrys=10}
+    PlayerTracker.ranks[9] =  { rank=9,  name='E-9 Chief master sergeant',  requiredXP = 42000,    cmdChance = 0.10,    cmdAward=10,    cmdTrys=10}
+    PlayerTracker.ranks[10] = { rank=10, name='O-1 Second lieutenant',      requiredXP = 52800,    cmdChance = 0.14,    cmdAward=20,    cmdTrys=15}
+    PlayerTracker.ranks[11] = { rank=11, name='O-2 First lieutenant',       requiredXP = 66500,    cmdChance = 0.20,    cmdAward=20,    cmdTrys=15}
+    PlayerTracker.ranks[12] = { rank=12, name='O-3 Captain',                requiredXP = 82500,    cmdChance = 0.27,    cmdAward=25,    cmdTrys=15, allowCarrierSupport=true}
+    PlayerTracker.ranks[13] = { rank=13, name='O-4 Major',                  requiredXP = 101000,   cmdChance = 0.34,    cmdAward=25,    cmdTrys=20, allowCarrierSupport=true}
+    PlayerTracker.ranks[14] = { rank=14, name='O-5 Lieutenant colonel',     requiredXP = 122200,   cmdChance = 0.43,    cmdAward=25,    cmdTrys=20, allowCarrierSupport=true}
+    PlayerTracker.ranks[15] = { rank=15, name='O-6 Colonel',                requiredXP = 146300,   cmdChance = 0.52,    cmdAward=30,    cmdTrys=20, allowCarrierSupport=true}
     PlayerTracker.ranks[16] = { rank=16, name='O-7 Brigadier general',      requiredXP = 173500,   cmdChance = 0.63,    cmdAward=35,    cmdTrys=25, allowCarrierSupport=true, allowCarrierCommand=true}
     PlayerTracker.ranks[17] = { rank=17, name='O-8 Major general',          requiredXP = 204000,   cmdChance = 0.74,    cmdAward=40,    cmdTrys=25, allowCarrierSupport=true, allowCarrierCommand=true}
     PlayerTracker.ranks[18] = { rank=18, name='O-9 Lieutenant general',     requiredXP = 238000,   cmdChance = 0.87,    cmdAward=45,    cmdTrys=25, allowCarrierSupport=true, allowCarrierCommand=true}

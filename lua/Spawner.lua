@@ -147,6 +147,7 @@ do
             spawnData = {
                 ["units"] = {},
                 ["name"] = name,
+                ["hiddenOnMFD"] = true,
                 ["task"] = "Ground Nothing",
                 ["route"] = {
                     ["points"]={

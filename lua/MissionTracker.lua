@@ -40,12 +40,13 @@ do
 
     MissionTracker.missionBoardSize = Config.missionBoardSize or 15
 
-	function MissionTracker:new()
+	function MissionTracker:new(boardPos)
 		local obj = {}
         obj.groupMenus = {}
         obj.missionIDPool = {}
         obj.missionBoard = {}
         obj.activeMissions = {}
+        obj.missionBoardPos = boardPos
 		
 		setmetatable(obj, self)
 		self.__index = self
@@ -308,6 +309,10 @@ do
             return time+10
         end, {context = self}, timer.getTime()+10)
 
+        if self.missionBoardPos then
+            trigger.action.textToAll(-1,99999, self.missionBoardPos, {0,0,0,0.8}, {1,1,1,0.5}, 10, true, "")
+        end
+
         timer.scheduleFunction(function(param, time)
             for code,mis in pairs(param.missionBoard) do
                 if timer.getAbsTime() - mis.lastStateTime > mis.expireTime then
@@ -325,6 +330,8 @@ do
             end
 
             --param:fillEmptySlots()
+
+            param:updateMapMarkup()
 
             return time+1
         end, self, timer.getTime()+1)
@@ -471,6 +478,23 @@ do
 		
 		world.addEventHandler(ev)
 	end
+
+    function MissionTracker:updateMapMarkup()
+        if not self.missionBoardPos then return end
+
+        local msg = 'Mission Board\n'
+        local empty = true
+        for i,v in pairs(self.missionBoard) do
+            empty = false
+            msg = msg..'\n'..v:getBriefDescription()..'\n'
+        end
+
+        if empty then 
+            msg = msg..'\n No missions available'
+        end
+
+        trigger.action.setMarkupText(99999,msg)
+    end
 
     function MissionTracker:fillEmptySlots()
         local misCount = Utils.getTableSize(self.missionBoard)

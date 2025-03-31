@@ -94,6 +94,36 @@ do
         dataCategory = TemplateDB.type.group
     }
 
+    TemplateDB.templates['player-mephisto'] = {
+        units = { "VAB_Mephisto" },
+        skill = "Good",
+        dataCategory = TemplateDB.type.group
+    }
+
+    TemplateDB.templates['player-warrior'] = {
+        units = { "MCV-80" },
+        skill = "Good",
+        dataCategory = TemplateDB.type.group
+    }
+
+    TemplateDB.templates['player-marder'] = {
+        units = { "Marder" },
+        skill = "Good",
+        dataCategory = TemplateDB.type.group
+    }
+
+    TemplateDB.templates['player-roland'] = {
+        units = { "Roland ADS" },
+        skill = "Good",
+        dataCategory = TemplateDB.type.group
+    }
+
+    TemplateDB.templates['player-hmat'] = {
+        units = { "M1045 HMMWV TOW" },
+        skill = "Good",
+        dataCategory = TemplateDB.type.group
+    }
+
     TemplateDB.templates["pilot-replacement"] = {
         units = { "Soldier M4 GRG" },
         skill = "Good",
@@ -286,7 +316,8 @@ do
 
     TemplateDB.templates["hangar"] = { type="Hangar A", category="Fortifications", shape_name="angar_a", dataCategory=TemplateDB.type.static }
 
-    TemplateDB.templates["excavator"] = { type="345 Excavator", category="Fortifications", shape_name="cat_3451", dataCategory=TemplateDB.type.static }
+    --TemplateDB.templates["excavator"] = { type="345 Excavator", category="Fortifications", shape_name="cat_3451", dataCategory=TemplateDB.type.static }
+    TemplateDB.templates["excavator"] = { type="CV_59_NS60", category="ADEquipment", shape_name="CV_59_NS60", dataCategory=TemplateDB.type.static }
 
     TemplateDB.templates["farm-house-1"] = { type="Farm A", category="Fortifications", shape_name="ferma_a", dataCategory=TemplateDB.type.static }
 

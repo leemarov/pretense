@@ -13,7 +13,7 @@ do
             {
                 { frequency = 262.5E6, modulation = 0, power=500 },
                 { frequency = 122.5E6, modulation = 0, power=500 },
-                { frequency = 032E6, modulation = 1, power=500 }, -- needs squelch off for some reason
+                { frequency = 032E6, modulation = 1, power=500 }, 
             }
         },
         infantry = { 
@@ -21,7 +21,7 @@ do
             freqs = {
                 { frequency = 263.5E6, modulation = 0, power=10 },
                 { frequency = 123.5E6, modulation = 0, power=10 },
-                { frequency = 033E6, modulation = 1, power=10 }, -- needs squelch off for some reason
+                { frequency = 033E6, modulation = 1, power=10 }, 
             }
         },
         gci = { 
@@ -29,7 +29,7 @@ do
             freqs = {
                 { frequency = 264.5E6, modulation = 0, power=500 },
                 { frequency = 124.5E6, modulation = 0, power=500 },
-                { frequency = 034E6, modulation = 1, power=500 }, -- needs squelch off for some reason
+                { frequency = 034E6, modulation = 1, power=500 }, 
             }
         },
         guard = {
@@ -96,7 +96,7 @@ do
             timer.scheduleFunction(function(param,time)
                 table.remove(param.queue, 1)
                 TransmissionManager.playNext(param)
-            end, radio, timer.getTime()+sound.length)
+            end, radio, timer.getTime()+sound.length+0.05)
         end
     end
 

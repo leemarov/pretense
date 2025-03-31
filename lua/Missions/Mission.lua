@@ -334,10 +334,7 @@ do
                     end
                 elseif obj.type == ObjDestroyUnitsWithAttribute:getType() then
                     for _,a in ipairs(obj.param.attr) do
-                        if hit:hasAttribute(a) then
-                            obj.param.hits = obj.param.hits + 1
-                            break
-                        elseif a == 'Buildings' and ZoneCommand and ZoneCommand.staticRegistry[hit:getName()] then
+                        if a == 'Buildings' and ZoneCommand and ZoneCommand.staticRegistry[hit:getName()] then
                             obj.param.hits = obj.param.hits + 1
                             break
                         end
@@ -366,10 +363,7 @@ do
                         
                         if validzone then
                             for _,a in ipairs(obj.param.attr) do
-                                if hit:hasAttribute(a) then
-                                    obj.param.hits = obj.param.hits + 1
-                                    break
-                                elseif a == 'Buildings' and ZoneCommand and ZoneCommand.staticRegistry[hit:getName()] then
+                                if a == 'Buildings' and ZoneCommand and ZoneCommand.staticRegistry[hit:getName()] then
                                     obj.param.hits = obj.param.hits + 1
                                     break
                                 end

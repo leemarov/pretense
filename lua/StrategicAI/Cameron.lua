@@ -302,7 +302,7 @@ do
             end
         end
 
-        local ttypes = { 'Drogue', 'Basket' }
+        local ttypes = { 'Drogue', 'Boom' }
         for _, ttype in ipairs(ttypes) do
             local tankertgt = suportzones[math.random(1,#suportzones)]
             local tanker = getMissionOfType(ZoneCommand.missionTypes.tanker, self.otherAssigned, ttype, tankertgt.zone.point)

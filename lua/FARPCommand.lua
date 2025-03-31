@@ -73,30 +73,38 @@ do
                 trackedBuildings[v.name].isDeleted = true
                 local st = StaticObject.getByName(v.name) or Group.getByName(v.name)
                 if st and st:isExist() then 
-                    
-                    local pos = st:getPoint()
-                    local amount = math.random(250,750)
+                    local pos = nil
+                    if st.getPoint then 
+                        pos = st:getPoint()
+                    elseif st.getSize and st:getSize()>0 and st.getUnit then
+                        local stu = st:getUnit(1)
+                        pos = stu:getPoint()
+                    end
 
-                    local cname = pl:generateCargoName("Salvage")
-                    local ctype = pl:getBoxType(amount)
+                    if pos then
+                        local amount = math.random(250,750)
 
-                    local spos = {
-                        x = pos.x + math.random(-15,15),
-                        y = pos.z + math.random(-15,15)
-                    }
+                        local cname = pl:generateCargoName("Salvage")
+                        local ctype = pl:getBoxType(amount)
 
-                    Spawner.createCrate(cname, ctype, spos, 2, 1, 15, amount)
+                        local spos = {
+                            x = pos.x + math.random(-15,15),
+                            y = pos.z + math.random(-15,15)
+                        }
 
-                    local origin = {
-                        name='locally sourced', 
-                        isCarrier=false,
-                        zone={ point=pos },
-                        distToFront = 0
-                    }
+                        Spawner.createCrate(cname, ctype, spos, 2, 1, 15, amount)
 
-                    pl.trackedBoxes[cname] = {name=cname, amount = amount, type=ctype, origin = origin, lifetime=60*60*2, isSalvage=true}
+                        local origin = {
+                            name='locally sourced', 
+                            isCarrier=false,
+                            zone={ point=pos },
+                            distToFront = 0
+                        }
 
-                    st:destroy() 
+                        pl.trackedBoxes[cname] = {name=cname, amount = amount, type=ctype, origin = origin, lifetime=60*60*2, isSalvage=true}
+
+                        st:destroy() 
+                    end
                 end
             end
         end
@@ -210,21 +218,21 @@ do
 
     function FARPCommand.getFeatureSymbol(featureType)
         if featureType == PlayerLogistics.buildables.ammo then
-            return ' A'
+            return ' Ammo'
         elseif featureType == PlayerLogistics.buildables.fuel then
-            return ' F'
+            return ' Fuel'
         elseif featureType == PlayerLogistics.buildables.forklift then
-            return ' L'
+            return ' Lft'
         elseif featureType == PlayerLogistics.buildables.generator then
-            return ' G'
+            return ' Gen'
         elseif featureType == PlayerLogistics.buildables.medtent then
-            return ' H'
+            return ' Med'
         elseif featureType == PlayerLogistics.buildables.radar then
-            return ' R'
+            return ' Rad'
         elseif featureType == PlayerLogistics.buildables.satuplink then
-            return ' S'
+            return ' Sat'
         elseif featureType == PlayerLogistics.buildables.tent then
-            return ' C'
+            return ' Com'
         end
 
         return ''
@@ -291,7 +299,7 @@ do
 
                 if pos then
                     local bfarp = FARPCommand.getFARPOfPoint(pos)
-                    if bfarp.name == self.name then
+                    if bfarp and bfarp.name == self.name then
                         self.featureBuildings[v.type]=v.name
                     end
                 end

@@ -53,6 +53,7 @@ do
     function AIActivator.reAssignMission(product, target)
         local g = DependencyManager.get("GroupMonitor"):getGroup(product.name)
         if not g then return false end
+        if not g.state then return false end
         
         local success = AIActivator.activateMission(product, target, { 
             productName = product.name,

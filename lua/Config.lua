@@ -24,7 +24,7 @@ Config.gciMaxCallouts = Config.gciMaxCallouts or 3
 
 if Config.showInventory == nil then Config.showInventory = false end -- set to true to show mission inventory on zones
 
-Config.chillMode = true
+Config.chillMode = false
 if Config.chillMode then
     Config.buildSpeed = 8
     Config.missionBuildSpeedReduction = 0.08

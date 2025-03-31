@@ -186,7 +186,7 @@ do
         }
     
         for i,v in pairs(save.activeGroups) do
-            if v.homeName then
+            if v.homeName and v.state then
                 if instantBuildStates[v.state] then
                     local z = ZoneCommand.getZoneByName(v.homeName)
                     if z then
